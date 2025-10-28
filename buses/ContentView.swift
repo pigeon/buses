@@ -340,7 +340,7 @@ final class BusesViewModel: ObservableObject {
     @Published var buses: [Bus] = []
     @Published var cameraPosition: MapCameraPosition = .automatic
     @Published var isLoading = false
-    @Published var errorMessage: String?
+    @Published var errorMessage: String = ""
 
     func refresh() async {
         isLoading = true
@@ -349,6 +349,7 @@ final class BusesViewModel: ObservableObject {
             let items = try await BusService.shared.fetchBuses()
             self.buses = items
             updateCameraToFit(buses: items)
+            self.errorMessage = ""
         } catch {
             self.errorMessage = error.localizedDescription
         }
@@ -498,10 +499,14 @@ struct ContentView: View {
                 }
             }
             .task { await vm.refresh() }
-            .alert("Error", isPresented: Binding(get: { vm.errorMessage != nil }, set: { _ in vm.errorMessage = nil })) {
-                Button("OK", role: .cancel) { vm.errorMessage = nil }
+            .alert("Error", isPresented: Binding(get: { !vm.errorMessage.isEmpty }, set: { newValue in
+                if !newValue {
+                    vm.errorMessage = ""
+                }
+            })) {
+                Button("OK", role: .cancel) { vm.errorMessage = "" }
             } message: {
-                Text(vm.errorMessage ?? "Unknown error")
+                Text(vm.errorMessage.isEmpty ? "Unknown error" : vm.errorMessage)
             }
             .sheet(isPresented: $isShowingList) {
                 BusListSheet(
