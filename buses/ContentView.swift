@@ -160,7 +160,7 @@ struct Bus: Decodable, Identifiable {
         }
     }
 
-    var occupancyLevel: BusOccupancyLevel {
+    fileprivate var occupancyLevel: BusOccupancyLevel {
         guard let capacity = occupancy?.seatedCapacity, capacity > 0,
               let seated = occupancy?.seatedOccupancy else {
             return .unknown
