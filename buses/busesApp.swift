@@ -7,8 +7,9 @@
 
 import SwiftUI
 
+
 @main
-struct busesApp: App {
+struct GoCoachBusesMapApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
