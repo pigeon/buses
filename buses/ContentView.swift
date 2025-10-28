@@ -847,3 +847,44 @@ private struct BusListRow: View {
         .contentShape(Rectangle())
     }
 }
+
+private struct BusAnnotationView: View {
+    let bus: Bus
+
+    var body: some View {
+        VStack(spacing: 2) {
+            ZStack(alignment: .topTrailing) {
+                Circle()
+                    .fill(.thinMaterial)
+                    .frame(width: 48, height: 48)
+                    .overlay {
+                        Image(systemName: "bus.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.tint)
+                    }
+
+                if let badge = bus.lineBadgeText {
+                    Text(badge)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.blue.gradient, in: Capsule())
+                        .offset(x: 14, y: -14)
+                }
+            }
+
+            Circle()
+                .fill(.primary)
+                .frame(width: 6, height: 6)
+                .opacity(0.4)
+        }
+        .shadow(radius: 2, x: 0, y: 1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(bus.title)
+        .accessibilityHint(bus.subtitle)
+    }
+}
