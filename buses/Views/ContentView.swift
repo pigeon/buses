@@ -50,14 +50,11 @@ struct ContentView: View {
             coordinateRegion: $viewModel.cameraRegion,
             interactionModes: .all,
             showsUserLocation: false,
-            userTrackingMode: .none
-        ) {
-            ForEach(filteredBuses) { bus in
-                if let coord = bus.coordinate {
-                    Annotation(bus.title, coordinate: coord) {
-                        BusAnnotationView(bus: bus)
-                    }
-                }
+            userTrackingMode: .none,
+            annotationItems: annotationItems
+        ) { item in
+            Annotation(item.bus.title, coordinate: item.coordinate) {
+                BusAnnotationView(bus: item.bus)
             }
         }
         .mapControls {
@@ -206,6 +203,13 @@ struct ContentView: View {
             }
     }
 
+    private var annotationItems: [BusAnnotationItem] {
+        filteredBuses.compactMap { bus in
+            guard let coordinate = bus.coordinate else { return nil }
+            return BusAnnotationItem(bus: bus, coordinate: coordinate)
+        }
+    }
+
     private var sortedRoutes: [String] {
         let routes = viewModel.buses.compactMap { $0.routeLabel }
         return Array(Set(routes)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
@@ -275,6 +279,13 @@ private struct BusAnnotationView: View {
                 .background(.thinMaterial, in: Circle())
         }
     }
+}
+
+private struct BusAnnotationItem: Identifiable {
+    let bus: Bus
+    let coordinate: CLLocationCoordinate2D
+
+    var id: String { bus.id }
 }
 
 private struct BusListSheet: View {
