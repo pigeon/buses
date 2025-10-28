@@ -396,6 +396,7 @@ struct ContentView: View {
     @State private var selectedRoutes: Set<String> = []
     @State private var occupancyFilter: OccupancyFilter = .all
     @State private var searchQuery: String = ""
+    @State private var focusedBusID: String?
 
     var body: some View {
         NavigationStack {
@@ -423,8 +424,31 @@ struct ContentView: View {
                         .padding()
                 }
 
-                VStack {
+                VStack(alignment: .leading, spacing: 12) {
                     Spacer()
+                    if let bus = focusedBus {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "scope")
+                                .font(.title3)
+                                .foregroundStyle(.tint)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Showing selected bus")
+                                    .font(.caption.smallCaps())
+                                    .foregroundStyle(.secondary)
+
+                                Text(bus.routeLabel ?? bus.title)
+                                    .font(.headline)
+                                Text(bus.destinationLabel)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(14)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(.horizontal)
+                    }
+
                     HStack {
                         Button {
                             isShowingList = true
@@ -441,7 +465,7 @@ struct ContentView: View {
                             Button {
                                 resetFilters()
                             } label: {
-                                Label("Clear", systemImage: "xmark.circle.fill")
+                                Label(clearFiltersLabel, systemImage: "xmark.circle.fill")
                                     .font(.subheadline)
                             }
                             .padding(.leading, 8)
@@ -486,7 +510,10 @@ struct ContentView: View {
                     selectedRoutes: $selectedRoutes,
                     occupancyFilter: $occupancyFilter,
                     searchQuery: $searchQuery,
+                    selectedBusID: focusedBusID,
+                    isShowingSelectedBus: focusedBusID != nil,
                     onSelect: { bus in
+                        focusedBusID = bus.id
                         vm.focus(on: bus)
                         isShowingList = false
                     },
@@ -499,12 +526,18 @@ struct ContentView: View {
             .onChange(of: vm.buses) { newValue in
                 let availableRoutes = Set(newValue.compactMap { $0.routeLabel })
                 selectedRoutes = selectedRoutes.intersection(availableRoutes)
+                ensureFocusedBusExists(in: newValue)
             }
         }
     }
 
     private var filteredBuses: [Bus] {
-        vm.buses
+        if let focusedID = focusedBusID,
+           let selectedBus = vm.buses.first(where: { $0.id == focusedID }) {
+            return [selectedBus]
+        }
+
+        return vm.buses
             .filter { bus in
                 matchesRouteFilter(bus: bus)
                 && matchesOccupancyFilter(bus: bus)
@@ -526,13 +559,23 @@ struct ContentView: View {
     }
 
     private var hasActiveFilters: Bool {
-        !selectedRoutes.isEmpty || occupancyFilter != .all || !searchQuery.isEmpty
+        !selectedRoutes.isEmpty || occupancyFilter != .all || !searchQuery.isEmpty || focusedBusID != nil
+    }
+
+    private var clearFiltersLabel: String {
+        focusedBusID != nil ? "Show all" : "Clear"
+    }
+
+    private var focusedBus: Bus? {
+        guard let focusedBusID else { return nil }
+        return vm.buses.first(where: { $0.id == focusedBusID })
     }
 
     private func resetFilters() {
         selectedRoutes.removeAll()
         occupancyFilter = .all
         searchQuery = ""
+        focusedBusID = nil
     }
 
     private func matchesRouteFilter(bus: Bus) -> Bool {
@@ -565,6 +608,13 @@ struct ContentView: View {
             .joined(separator: " ")
             .lowercased()
         return haystack.contains(lowerQuery)
+    }
+
+    private func ensureFocusedBusExists(in buses: [Bus]) {
+        guard let focusedBusID else { return }
+        if !buses.contains(where: { $0.id == focusedBusID }) {
+            focusedBusID = nil
+        }
     }
 }
 
@@ -647,6 +697,8 @@ private struct BusListSheet: View {
     @Binding var selectedRoutes: Set<String>
     @Binding var occupancyFilter: OccupancyFilter
     @Binding var searchQuery: String
+    let selectedBusID: String?
+    let isShowingSelectedBus: Bool
     let onSelect: (Bus) -> Void
     let onReset: () -> Void
     let displayedBusCount: Int
@@ -690,7 +742,7 @@ private struct BusListSheet: View {
                             Button {
                                 onSelect(bus)
                             } label: {
-                                BusListRow(bus: bus)
+                                BusListRow(bus: bus, isSelected: bus.id == selectedBusID)
                             }
                             .buttonStyle(.plain)
                         }
@@ -712,7 +764,7 @@ private struct BusListSheet: View {
     }
 
     private var hasActiveFilters: Bool {
-        !selectedRoutes.isEmpty || occupancyFilter != .all || !searchQuery.isEmpty
+        !selectedRoutes.isEmpty || occupancyFilter != .all || !searchQuery.isEmpty || isShowingSelectedBus
     }
 
     private func toggleRoute(_ route: String) {
@@ -749,9 +801,15 @@ private struct MultipleSelectionRow: View {
 
 private struct BusListRow: View {
     let bus: Bus
+    let isSelected: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if isSelected {
+                Label("Showing on map", systemImage: "scope")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tint)
+            }
             HStack {
                 Image(systemName: "bus")
                 Text(bus.routeLabel ?? bus.title)
@@ -773,6 +831,14 @@ private struct BusListRow: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
+            }
+        }
         .contentShape(Rectangle())
     }
 }
