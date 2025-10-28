@@ -428,55 +428,41 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Spacer()
                     if let bus = focusedBus {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "scope")
-                                .font(.title3)
-                                .foregroundStyle(.tint)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "scope")
+                                    .font(.title3)
+                                    .foregroundStyle(.tint)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Showing selected bus")
-                                    .font(.caption.smallCaps())
-                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Showing selected bus")
+                                        .font(.caption.smallCaps())
+                                        .foregroundStyle(.secondary)
 
-                                Text(bus.routeLabel ?? bus.title)
-                                    .font(.headline)
-                                Text(bus.destinationLabel)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                    Text(bus.routeLabel ?? bus.title)
+                                        .font(.headline)
+                                    Text(bus.destinationLabel)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
+
+                            Button {
+                                focusedBusID = nil
+                            } label: {
+                                Label("Show all buses", systemImage: "line.3.horizontal.decrease")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .labelStyle(.titleAndIcon)
+                            .buttonStyle(.bordered)
+                            .tint(.accentColor)
                         }
                         .padding(14)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .padding(.horizontal)
                     }
-
-                    HStack {
-                        Button {
-                            isShowingList = true
-                        } label: {
-                            Label("Bus list & filters", systemImage: "list.bullet")
-                                .font(.headline)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(.thinMaterial, in: Capsule())
-                        }
-                        .accessibilityLabel("Show bus list and filters")
-
-                        if hasActiveFilters {
-                            Button {
-                                resetFilters()
-                            } label: {
-                                Label(clearFiltersLabel, systemImage: "xmark.circle.fill")
-                                    .font(.subheadline)
-                            }
-                            .padding(.leading, 8)
-                            .buttonStyle(.bordered)
-                        }
-
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom, 20)
+                }
+                .padding(.bottom, 20)
                 }
             }
             .navigationTitle("Go Coach Buses")
@@ -561,14 +547,6 @@ struct ContentView: View {
     private var sortedRoutes: [String] {
         let routes = vm.buses.compactMap { $0.routeLabel }
         return Array(Set(routes)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-    }
-
-    private var hasActiveFilters: Bool {
-        !selectedRoutes.isEmpty || occupancyFilter != .all || !searchQuery.isEmpty || focusedBusID != nil
-    }
-
-    private var clearFiltersLabel: String {
-        focusedBusID != nil ? "Show all" : "Clear"
     }
 
     private var focusedBus: Bus? {
