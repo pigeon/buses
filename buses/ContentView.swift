@@ -128,6 +128,13 @@ struct Bus: Decodable, Identifiable {
         return currentStopFullName ?? currentStopName ?? ""
     }
 
+    var lineBadgeText: String? {
+        guard let name = publishedLineName ?? lineRef else { return nil }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(4))
+    }
+
     // Custom decoder to handle mixed date formats and string coords
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -284,17 +291,7 @@ struct ContentView: View {
                     ForEach(vm.buses) { bus in
                         if let coord = bus.coordinate {
                             Annotation(bus.title, coordinate: coord) {
-                                VStack(spacing: 4) {
-                                    Label(bus.title, systemImage: "bus")
-                                        .font(.caption)
-                                    if !bus.subtitle.isEmpty {
-                                        Text(bus.subtitle)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .padding(8)
-                                .background(.thinMaterial, in: .rect(cornerRadius: 8))
+                                BusAnnotationView(bus: bus)
                             }
                         }
                     }
@@ -331,5 +328,46 @@ struct ContentView: View {
                 Text(vm.errorMessage ?? "Unknown error")
             }
         }
+    }
+}
+
+private struct BusAnnotationView: View {
+    let bus: Bus
+
+    var body: some View {
+        VStack(spacing: 2) {
+            ZStack(alignment: .topTrailing) {
+                Circle()
+                    .fill(.thinMaterial)
+                    .frame(width: 48, height: 48)
+                    .overlay {
+                        Image(systemName: "bus.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.tint)
+                    }
+
+                if let badge = bus.lineBadgeText {
+                    Text(badge)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.blue.gradient, in: Capsule())
+                        .offset(x: 14, y: -14)
+                }
+            }
+
+            Circle()
+                .fill(.primary)
+                .frame(width: 6, height: 6)
+                .opacity(0.4)
+        }
+        .shadow(radius: 2, x: 0, y: 1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(bus.title)
+        .accessibilityHint(bus.subtitle)
     }
 }
