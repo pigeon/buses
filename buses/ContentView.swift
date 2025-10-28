@@ -18,7 +18,7 @@ import Combine
 
 
 // MARK: - Model
-struct Bus: Decodable, Identifiable {
+struct Bus: Decodable, Identifiable, Equatable {
     // Coding keys map the incoming JSON
     enum CodingKeys: String, CodingKey {
         case routeDescription = "RouteDescription"
@@ -57,7 +57,7 @@ struct Bus: Decodable, Identifiable {
         case timingStatus = "TimingStatus"
     }
 
-    struct Occupancy: Decodable {
+    struct Occupancy: Decodable, Equatable {
         let seatedCapacity: Int?
         let seatedOccupancy: Int?
         let wheelchairCapacity: Int?
@@ -108,9 +108,10 @@ struct Bus: Decodable, Identifiable {
     let vehicleRef: String?
     let destination: String?
     let timingStatus: String?
+    private let stableIdentifier: String
 
     // Stable identity across refreshes: vehicleRef + lineRef preferred
-    var id: String { (vehicleRef ?? UUID().uuidString) + "_" + (lineRef ?? "-") }
+    var id: String { stableIdentifier }
 
     // Convenience
     var coordinate: CLLocationCoordinate2D? {
@@ -212,6 +213,71 @@ struct Bus: Decodable, Identifiable {
         vehicleRef = try c.decodeIfPresent(String.self, forKey: .vehicleRef)
         destination = try c.decodeIfPresent(String.self, forKey: .destination)
         timingStatus = try c.decodeIfPresent(String.self, forKey: .timingStatus)
+
+        stableIdentifier = Bus.makeStableIdentifier(
+            vehicleRef: vehicleRef,
+            lineRef: lineRef,
+            journeyCode: journeyCode,
+            ticketMachineServiceCode: ticketMachineServiceCode,
+            blockRef: blockRef,
+            stopPointRef: stopPointRef,
+            latitude: latitudeString,
+            longitude: longitudeString,
+            recordedAt: recordedAtTimeISO,
+            validUntil: validUntilTimeISO
+        )
+    }
+
+    private static func makeStableIdentifier(
+        vehicleRef: String?,
+        lineRef: String?,
+        journeyCode: String?,
+        ticketMachineServiceCode: String?,
+        blockRef: String?,
+        stopPointRef: String?,
+        latitude: String,
+        longitude: String,
+        recordedAt: Date?,
+        validUntil: Date?
+    ) -> String {
+        if let vehicleRef, let lineRef {
+            return "\(vehicleRef)_\(lineRef)"
+        }
+        if let vehicleRef {
+            return vehicleRef
+        }
+        if let journeyCode, !journeyCode.isEmpty {
+            return journeyCode
+        }
+        if let ticketMachineServiceCode, !ticketMachineServiceCode.isEmpty {
+            return ticketMachineServiceCode
+        }
+        if let blockRef, !blockRef.isEmpty {
+            return blockRef
+        }
+        if let stopPointRef, !stopPointRef.isEmpty {
+            return stopPointRef
+        }
+
+        var components: [String] = []
+        if !latitude.isEmpty {
+            components.append(latitude)
+        }
+        if !longitude.isEmpty {
+            components.append(longitude)
+        }
+        if let recordedAt {
+            components.append(String(Int(recordedAt.timeIntervalSince1970)))
+        }
+        if let validUntil {
+            components.append(String(Int(validUntil.timeIntervalSince1970)))
+        }
+
+        if !components.isEmpty {
+            return components.joined(separator: "_")
+        }
+
+        return UUID().uuidString
     }
 
     private static func decodeISO8601OrNil(from c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) throws -> Date? {
