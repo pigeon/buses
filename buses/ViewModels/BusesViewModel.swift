@@ -5,7 +5,7 @@ import MapKit
 @MainActor
 final class BusesViewModel: ObservableObject {
     @Published var buses: [Bus] = []
-    @Published var cameraPosition: MapCameraPosition = .automatic
+    @Published var cameraRegion: MKCoordinateRegion = .defaultRegion
     @Published var isLoading = false
     @Published var errorMessage: String?
 
@@ -26,7 +26,7 @@ final class BusesViewModel: ObservableObject {
         guard let coord = bus.coordinate else { return }
         let span = MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
         let region = MKCoordinateRegion(center: coord, span: span)
-        cameraPosition = .region(region)
+        cameraRegion = region
     }
 
     private func updateCameraToFit(buses: [Bus]) {
@@ -35,7 +35,7 @@ final class BusesViewModel: ObservableObject {
 
         if coords.count == 1, let c = coords.first {
             let region = MKCoordinateRegion(center: c, span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1))
-            cameraPosition = .region(region)
+            cameraRegion = region
             return
         }
 
@@ -59,6 +59,15 @@ final class BusesViewModel: ObservableObject {
             longitudeDelta: (maxLon - minLon) + lonPad
         )
         let region = MKCoordinateRegion(center: center, span: span)
-        cameraPosition = .region(region)
+        cameraRegion = region
+    }
+}
+
+private extension MKCoordinateRegion {
+    static var defaultRegion: MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 51.4545, longitude: -0.9781),
+            span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
+        )
     }
 }

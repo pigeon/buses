@@ -11,7 +11,12 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                Map(position: $viewModel.cameraPosition) {
+                Map(
+                    coordinateRegion: $viewModel.cameraRegion,
+                    interactionModes: .all,
+                    showsUserLocation: false,
+                    userTrackingMode: .none
+                ) {
                     ForEach(filteredBuses) { bus in
                         if let coord = bus.coordinate {
                             Annotation(bus.title, coordinate: coord) {
