@@ -53,7 +53,7 @@ struct ContentView: View {
             userTrackingMode: .none,
             annotationItems: annotationItems
         ) { item in
-            Annotation(item.bus.title, coordinate: item.coordinate) {
+            MapAnnotation(coordinate: item.coordinate) {
                 BusAnnotationView(bus: item.bus)
             }
         }
@@ -96,14 +96,14 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Showing selected bus")
                         .font(.caption.smallCaps())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondary)
 
                     Text(bus.routeLabel ?? bus.title)
                         .font(.headline)
 
                     Text(bus.destinationLabel)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondary)
                 }
 
                 Spacer()
@@ -369,7 +369,7 @@ private struct BusRow: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: isFocused ? "scope" : "bus.fill")
                 .font(.title2)
-                .foregroundStyle(isFocused ? .tint : .secondary)
+                .foregroundStyle(isFocused ? Color.accentColor : Color.secondary)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -387,11 +387,11 @@ private struct BusRow: View {
 
                 Text(bus.destinationLabel)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondary)
 
                 Text(bus.occupancyDescription)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondary)
             }
         }
     }
