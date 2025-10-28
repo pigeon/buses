@@ -467,7 +467,7 @@ struct ContentView: View {
             }
             .navigationTitle("Go Coach Buses")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await self.vm.refresh() }
                     } label: {
@@ -475,7 +475,7 @@ struct ContentView: View {
                     }
                     .accessibilityLabel("Refresh")
                 }
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
                         self.isShowingList = true
                     } label: {
