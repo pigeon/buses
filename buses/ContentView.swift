@@ -451,17 +451,6 @@ struct ContentView: View {
                     }
 
                     HStack {
-                        Button {
-                            isShowingList = true
-                        } label: {
-                            Label("Bus list & filters", systemImage: "list.bullet")
-                                .font(.headline)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(.thinMaterial, in: Capsule())
-                        }
-                        .accessibilityLabel("Show bus list and filters")
-
                         if hasActiveFilters {
                             Button {
                                 resetFilters()
@@ -469,7 +458,6 @@ struct ContentView: View {
                                 Label(clearFiltersLabel, systemImage: "xmark.circle.fill")
                                     .font(.subheadline)
                             }
-                            .padding(.leading, 8)
                             .buttonStyle(.bordered)
                         }
 
