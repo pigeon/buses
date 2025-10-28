@@ -520,7 +520,6 @@ struct ContentView: View {
                 self.ensureFocusedBusExists(in: newValue)
             }
         }
-    }
 
     private var filteredBuses: [Bus] {
         if let focusedID = self.focusedBusID,
