@@ -1,4 +1,5 @@
 import Foundation
+import _MapKit_SwiftUI
 import Combine
 import MapKit
 
