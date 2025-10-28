@@ -466,24 +466,6 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Go Coach Buses")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        Task { await self.vm.refresh() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .accessibilityLabel("Refresh")
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        self.isShowingList = true
-                    } label: {
-                        Image(systemName: "list.bullet")
-                    }
-                    .accessibilityLabel("Open bus list")
-                }
-            }
             .task { await self.vm.refresh() }
             .alert("Error", isPresented: Binding(get: { self.vm.errorMessage != nil }, set: { newValue in
                 if !newValue {
