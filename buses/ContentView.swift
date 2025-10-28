@@ -18,7 +18,7 @@ import Combine
 
 
 // MARK: - Model
-struct Bus: Decodable, Identifiable {
+struct Bus: Decodable, Identifiable, Equatable {
     // Coding keys map the incoming JSON
     enum CodingKeys: String, CodingKey {
         case routeDescription = "RouteDescription"
@@ -57,7 +57,7 @@ struct Bus: Decodable, Identifiable {
         case timingStatus = "TimingStatus"
     }
 
-    struct Occupancy: Decodable {
+    struct Occupancy: Decodable, Equatable {
         let seatedCapacity: Int?
         let seatedOccupancy: Int?
         let wheelchairCapacity: Int?
@@ -108,9 +108,10 @@ struct Bus: Decodable, Identifiable {
     let vehicleRef: String?
     let destination: String?
     let timingStatus: String?
+    private let stableIdentifier: String
 
     // Stable identity across refreshes: vehicleRef + lineRef preferred
-    var id: String { (vehicleRef ?? UUID().uuidString) + "_" + (lineRef ?? "-") }
+    var id: String { stableIdentifier }
 
     // Convenience
     var coordinate: CLLocationCoordinate2D? {
@@ -133,6 +134,42 @@ struct Bus: Decodable, Identifiable {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return String(trimmed.prefix(4))
+    }
+
+    var routeLabel: String? {
+        let trimmedName = publishedLineName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let name = trimmedName, !name.isEmpty { return name }
+        let trimmedRef = lineRef?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let ref = trimmedRef, !ref.isEmpty { return ref }
+        return nil
+    }
+
+    var destinationLabel: String {
+        subtitle.isEmpty ? (destination ?? "") : subtitle
+    }
+
+    var occupancyDescription: String {
+        switch occupancyLevel {
+        case .unknown:
+            return "Occupancy: Unknown"
+        case .plenty:
+            return "Occupancy: Many seats"
+        case .limited:
+            return "Occupancy: Few seats"
+        case .full:
+            return "Occupancy: Full"
+        }
+    }
+
+    fileprivate var occupancyLevel: BusOccupancyLevel {
+        guard let capacity = occupancy?.seatedCapacity, capacity > 0,
+              let seated = occupancy?.seatedOccupancy else {
+            return .unknown
+        }
+        let ratio = Double(seated) / Double(capacity)
+        if ratio < 0.4 { return .plenty }
+        if ratio < 0.85 { return .limited }
+        return .full
     }
 
     // Custom decoder to handle mixed date formats and string coords
@@ -176,6 +213,71 @@ struct Bus: Decodable, Identifiable {
         vehicleRef = try c.decodeIfPresent(String.self, forKey: .vehicleRef)
         destination = try c.decodeIfPresent(String.self, forKey: .destination)
         timingStatus = try c.decodeIfPresent(String.self, forKey: .timingStatus)
+
+        stableIdentifier = Bus.makeStableIdentifier(
+            vehicleRef: vehicleRef,
+            lineRef: lineRef,
+            journeyCode: journeyCode,
+            ticketMachineServiceCode: ticketMachineServiceCode,
+            blockRef: blockRef,
+            stopPointRef: stopPointRef,
+            latitude: latitudeString,
+            longitude: longitudeString,
+            recordedAt: recordedAtTimeISO,
+            validUntil: validUntilTimeISO
+        )
+    }
+
+    private static func makeStableIdentifier(
+        vehicleRef: String?,
+        lineRef: String?,
+        journeyCode: String?,
+        ticketMachineServiceCode: String?,
+        blockRef: String?,
+        stopPointRef: String?,
+        latitude: String,
+        longitude: String,
+        recordedAt: Date?,
+        validUntil: Date?
+    ) -> String {
+        if let vehicleRef, let lineRef {
+            return "\(vehicleRef)_\(lineRef)"
+        }
+        if let vehicleRef {
+            return vehicleRef
+        }
+        if let journeyCode, !journeyCode.isEmpty {
+            return journeyCode
+        }
+        if let ticketMachineServiceCode, !ticketMachineServiceCode.isEmpty {
+            return ticketMachineServiceCode
+        }
+        if let blockRef, !blockRef.isEmpty {
+            return blockRef
+        }
+        if let stopPointRef, !stopPointRef.isEmpty {
+            return stopPointRef
+        }
+
+        var components: [String] = []
+        if !latitude.isEmpty {
+            components.append(latitude)
+        }
+        if !longitude.isEmpty {
+            components.append(longitude)
+        }
+        if let recordedAt {
+            components.append(String(Int(recordedAt.timeIntervalSince1970)))
+        }
+        if let validUntil {
+            components.append(String(Int(validUntil.timeIntervalSince1970)))
+        }
+
+        if !components.isEmpty {
+            return components.joined(separator: "_")
+        }
+
+        return UUID().uuidString
     }
 
     private static func decodeISO8601OrNil(from c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) throws -> Date? {
@@ -247,9 +349,17 @@ final class BusesViewModel: ObservableObject {
             let items = try await BusService.shared.fetchBuses()
             self.buses = items
             updateCameraToFit(buses: items)
+            self.errorMessage = nil
         } catch {
             self.errorMessage = error.localizedDescription
         }
+    }
+
+    func focus(on bus: Bus) {
+        guard let coord = bus.coordinate else { return }
+        let span = MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
+        let region = MKCoordinateRegion(center: coord, span: span)
+        cameraPosition = .region(region)
     }
 
     private func updateCameraToFit(buses: [Bus]) {
@@ -283,12 +393,17 @@ final class BusesViewModel: ObservableObject {
 // MARK: - View
 struct ContentView: View {
     @StateObject private var vm = BusesViewModel()
+    @State private var isShowingList = false
+    @State private var selectedRoutes: Set<String> = []
+    @State private var occupancyFilter: OccupancyFilter = .all
+    @State private var searchQuery: String = ""
+    @State private var focusedBusID: String?
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
                 Map(position: $vm.cameraPosition) {
-                    ForEach(vm.buses) { bus in
+                    ForEach(filteredBuses) { bus in
                         if let coord = bus.coordinate {
                             Annotation(bus.title, coordinate: coord) {
                                 BusAnnotationView(bus: bus)
@@ -309,6 +424,60 @@ struct ContentView: View {
                         .background(.ultraThinMaterial, in: .capsule)
                         .padding()
                 }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Spacer()
+                    if let bus = focusedBus {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "scope")
+                                .font(.title3)
+                                .foregroundStyle(.tint)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Showing selected bus")
+                                    .font(.caption.smallCaps())
+                                    .foregroundStyle(.secondary)
+
+                                Text(bus.routeLabel ?? bus.title)
+                                    .font(.headline)
+                                Text(bus.destinationLabel)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(14)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(.horizontal)
+                    }
+
+                    HStack {
+                        Button {
+                            isShowingList = true
+                        } label: {
+                            Label("Bus list & filters", systemImage: "list.bullet")
+                                .font(.headline)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(.thinMaterial, in: Capsule())
+                        }
+                        .accessibilityLabel("Show bus list and filters")
+
+                        if hasActiveFilters {
+                            Button {
+                                resetFilters()
+                            } label: {
+                                Label(clearFiltersLabel, systemImage: "xmark.circle.fill")
+                                    .font(.subheadline)
+                            }
+                            .padding(.leading, 8)
+                            .buttonStyle(.bordered)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 20)
+                }
             }
             .navigationTitle("Go Coach Buses")
             .toolbar {
@@ -320,14 +489,321 @@ struct ContentView: View {
                     }
                     .accessibilityLabel("Refresh")
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        isShowingList = true
+                    } label: {
+                        Image(systemName: "list.bullet")
+                    }
+                    .accessibilityLabel("Open bus list")
+                }
             }
             .task { await vm.refresh() }
-            .alert("Error", isPresented: Binding(get: { vm.errorMessage != nil }, set: { _ in vm.errorMessage = nil })) {
+            .alert("Error", isPresented: Binding(get: { vm.errorMessage != nil }, set: { newValue in
+                if !newValue {
+                    vm.errorMessage = nil
+                }
+            })) {
                 Button("OK", role: .cancel) { vm.errorMessage = nil }
             } message: {
                 Text(vm.errorMessage ?? "Unknown error")
             }
+            .sheet(isPresented: $isShowingList) {
+                BusListSheet(
+                    buses: filteredBuses,
+                    allRoutes: sortedRoutes,
+                    selectedRoutes: $selectedRoutes,
+                    occupancyFilter: $occupancyFilter,
+                    searchQuery: $searchQuery,
+                    selectedBusID: focusedBusID,
+                    isShowingSelectedBus: focusedBusID != nil,
+                    onSelect: { bus in
+                        focusedBusID = bus.id
+                        vm.focus(on: bus)
+                        isShowingList = false
+                    },
+                    onReset: resetFilters,
+                    displayedBusCount: filteredBuses.count,
+                    totalBusCount: vm.buses.count
+                )
+                .presentationDetents([.medium, .large])
+            }
+            .onChange(of: vm.buses) { newValue in
+                let availableRoutes = Set(newValue.compactMap { $0.routeLabel })
+                selectedRoutes = selectedRoutes.intersection(availableRoutes)
+                ensureFocusedBusExists(in: newValue)
+            }
         }
+    }
+
+    private var filteredBuses: [Bus] {
+        if let focusedID = focusedBusID,
+           let selectedBus = vm.buses.first(where: { $0.id == focusedID }) {
+            return [selectedBus]
+        }
+
+        return vm.buses
+            .filter { bus in
+                matchesRouteFilter(bus: bus)
+                && matchesOccupancyFilter(bus: bus)
+                && matchesSearchQuery(bus: bus)
+            }
+            .sorted { lhs, rhs in
+                let lhsRoute = lhs.routeLabel ?? lhs.title
+                let rhsRoute = rhs.routeLabel ?? rhs.title
+                if lhsRoute.caseInsensitiveCompare(rhsRoute) == .orderedSame {
+                    return lhs.destinationLabel < rhs.destinationLabel
+                }
+                return lhsRoute.localizedCaseInsensitiveCompare(rhsRoute) == .orderedAscending
+            }
+    }
+
+    private var sortedRoutes: [String] {
+        let routes = vm.buses.compactMap { $0.routeLabel }
+        return Array(Set(routes)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private var hasActiveFilters: Bool {
+        !selectedRoutes.isEmpty || occupancyFilter != .all || !searchQuery.isEmpty || focusedBusID != nil
+    }
+
+    private var clearFiltersLabel: String {
+        focusedBusID != nil ? "Show all" : "Clear"
+    }
+
+    private var focusedBus: Bus? {
+        guard let focusedBusID else { return nil }
+        return vm.buses.first(where: { $0.id == focusedBusID })
+    }
+
+    private func resetFilters() {
+        selectedRoutes.removeAll()
+        occupancyFilter = .all
+        searchQuery = ""
+        focusedBusID = nil
+    }
+
+    private func matchesRouteFilter(bus: Bus) -> Bool {
+        guard !selectedRoutes.isEmpty else { return true }
+        guard let route = bus.routeLabel else { return false }
+        return selectedRoutes.contains(route)
+    }
+
+    private func matchesOccupancyFilter(bus: Bus) -> Bool {
+        switch occupancyFilter {
+        case .all:
+            return true
+        case .manySeats:
+            return bus.occupancyLevel == .plenty
+        case .fewSeats:
+            return bus.occupancyLevel == .limited
+        case .full:
+            return bus.occupancyLevel == .full
+        case .unknown:
+            return bus.occupancyLevel == .unknown
+        }
+    }
+
+    private func matchesSearchQuery(bus: Bus) -> Bool {
+        guard !searchQuery.isEmpty else { return true }
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return true }
+        let lowerQuery = query.lowercased()
+        let haystack = [bus.title, bus.destinationLabel, bus.routeLabel ?? ""]
+            .joined(separator: " ")
+            .lowercased()
+        return haystack.contains(lowerQuery)
+    }
+
+    private func ensureFocusedBusExists(in buses: [Bus]) {
+        guard let currentFocusedID = focusedBusID else { return }
+        if !buses.contains(where: { $0.id == currentFocusedID }) {
+            focusedBusID = nil
+        }
+    }
+}
+
+private enum BusOccupancyLevel: String {
+    case unknown
+    case plenty
+    case limited
+    case full
+}
+
+private enum OccupancyFilter: String, CaseIterable, Identifiable {
+    case all
+    case manySeats
+    case fewSeats
+    case full
+    case unknown
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all:
+            return "All occupancy"
+        case .manySeats:
+            return "Many seats"
+        case .fewSeats:
+            return "Few seats"
+        case .full:
+            return "Full"
+        case .unknown:
+            return "Unknown"
+        }
+    }
+}
+
+private struct BusListSheet: View {
+    let buses: [Bus]
+    let allRoutes: [String]
+    @Binding var selectedRoutes: Set<String>
+    @Binding var occupancyFilter: OccupancyFilter
+    @Binding var searchQuery: String
+    let selectedBusID: String?
+    let isShowingSelectedBus: Bool
+    let onSelect: (Bus) -> Void
+    let onReset: () -> Void
+    let displayedBusCount: Int
+    let totalBusCount: Int
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if !allRoutes.isEmpty {
+                    Section("Routes") {
+                        ForEach(allRoutes, id: \.self) { route in
+                            MultipleSelectionRow(title: route, isSelected: selectedRoutes.contains(route)) {
+                                toggleRoute(route)
+                            }
+                        }
+                    }
+                }
+
+                Section("Occupancy") {
+                    Picker("Occupancy", selection: $occupancyFilter) {
+                        ForEach(OccupancyFilter.allCases) { filter in
+                            Text(filter.label).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section("Search") {
+                    TextField("Search route or destination", text: $searchQuery)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                }
+
+                Section(header: Text("Buses (\(displayedBusCount)/\(totalBusCount))")) {
+                    if buses.isEmpty {
+                        ContentUnavailableView("No buses match your filters", systemImage: "magnifyingglass")
+                    } else {
+                        ForEach(buses) { bus in
+                            Button {
+                                onSelect(bus)
+                            } label: {
+                                BusListRow(bus: bus, isSelected: bus.id == selectedBusID)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Bus list")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if hasActiveFilters {
+                        Button("Clear filters") { onReset() }
+                    }
+                }
+            }
+        }
+    }
+
+    private var hasActiveFilters: Bool {
+        !selectedRoutes.isEmpty || occupancyFilter != .all || !searchQuery.isEmpty || isShowingSelectedBus
+    }
+
+    private func toggleRoute(_ route: String) {
+        if selectedRoutes.contains(route) {
+            selectedRoutes.remove(route)
+        } else {
+            selectedRoutes.insert(route)
+        }
+    }
+}
+
+private struct MultipleSelectionRow: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement()
+        .accessibilityLabel(title)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+    }
+}
+
+private struct BusListRow: View {
+    let bus: Bus
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if isSelected {
+                Label("Showing on map", systemImage: "scope")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tint)
+            }
+            HStack {
+                Image(systemName: "bus")
+                Text(bus.routeLabel ?? bus.title)
+                    .font(.headline)
+                Spacer()
+                if let badge = bus.lineBadgeText {
+                    Text(badge)
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.thinMaterial, in: Capsule())
+                }
+            }
+            Text(bus.destinationLabel)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text(bus.occupancyDescription)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
+            }
+        }
+        .contentShape(Rectangle())
     }
 }
 
