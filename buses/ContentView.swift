@@ -616,8 +616,8 @@ struct ContentView: View {
     }
 
     private func ensureFocusedBusExists(in buses: [Bus]) {
-        guard let focusedBusID else { return }
-        if !buses.contains(where: { $0.id == focusedBusID }) {
+        guard let currentFocusedID = focusedBusID else { return }
+        if !buses.contains(where: { $0.id == currentFocusedID }) {
             focusedBusID = nil
         }
     }
