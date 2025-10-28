@@ -11,21 +11,126 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                mapView
-                loadingIndicator
-                bottomOverlay
-            }
-            .navigationTitle("Go Coach buses")
-            .toolbar { loadingToolbar }
-            .task { await viewModel.refresh() }
-            .refreshable { await viewModel.refresh() }
-            .sheet(isPresented: $isShowingList) { busListSheet }
-            .alert("Error", isPresented: errorBinding, presenting: viewModel.errorMessage) { _ in
-                Button("OK", role: .cancel) {
-                    viewModel.errorMessage = nil
+                Map(position: $viewModel.cameraPosition) {
+                    ForEach(filteredBuses) { bus in
+                        if let coordinate = bus.coordinate {
+                            Annotation(bus.title, coordinate: coordinate) {
+                                BusAnnotationView(bus: bus)
+                            }
+                        }
+                    }
                 }
-            } message: { error in
-                Text(error)
+                .mapControls {
+                    MapCompass()
+                    MapScaleView()
+                    MapPitchToggle()
+                    MapUserLocationButton()
+                }
+
+                if viewModel.isLoading {
+                    ProgressView()
+                        .padding(8)
+                        .background(.ultraThinMaterial, in: .capsule)
+                        .padding()
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Spacer()
+
+                    if let bus = focusedBus {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "scope")
+                                .font(.title3)
+                                .foregroundStyle(.tint)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Showing selected bus")
+                                    .font(.caption.smallCaps())
+                                    .foregroundStyle(.secondary)
+
+                                Text(bus.routeLabel ?? bus.title)
+                                    .font(.headline)
+
+                                Text(bus.destinationLabel)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(14)
+                        .background(
+                            .thinMaterial,
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        )
+                        .padding(.horizontal)
+                    }
+
+                    HStack {
+                        if hasActiveFilters {
+                            Button { resetFilters() } label: {
+                                Label(clearFiltersLabel, systemImage: "xmark.circle.fill")
+                                    .font(.subheadline)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 20)
+                }
+            }
+            .navigationTitle("Go Coach Buses")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await viewModel.refresh() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel("Refresh")
+                }
+
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { isShowingList = true } label: {
+                        Image(systemName: "list.bullet")
+                    }
+                    .accessibilityLabel("Open bus list")
+                }
+            }
+            .task { await viewModel.refresh() }
+            .alert(
+                "Error",
+                isPresented: Binding(
+                    get: { viewModel.errorMessage != nil },
+                    set: { newValue in
+                        if !newValue {
+                            viewModel.errorMessage = nil
+                        }
+                    }
+                )
+            ) {
+                Button("OK", role: .cancel) { viewModel.errorMessage = nil }
+            } message: {
+                Text(viewModel.errorMessage ?? "Unknown error")
+            }
+            .sheet(isPresented: $isShowingList) {
+                BusListSheet(
+                    buses: filteredBuses,
+                    allRoutes: sortedRoutes,
+                    selectedRoutes: $selectedRoutes,
+                    searchQuery: $searchQuery,
+                    selectedBusID: focusedBusID,
+                    isShowingSelectedBus: focusedBusID != nil,
+                    onSelect: { bus in
+                        focusedBusID = bus.id
+                        viewModel.focus(on: bus)
+                        isShowingList = false
+                    },
+                    onReset: resetFilters,
+                    displayedBusCount: filteredBuses.count,
+                    totalBusCount: viewModel.buses.count
+                )
+                .presentationDetents([.medium, .large])
             }
             .onChange(of: viewModel.buses) { newValue in
                 let availableRoutes = Set(newValue.compactMap { $0.routeLabel })
@@ -33,153 +138,6 @@ struct ContentView: View {
                 ensureFocusedBusExists(in: newValue)
             }
         }
-    }
-
-    @ToolbarContentBuilder
-    private var loadingToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            if viewModel.isLoading {
-                ProgressView()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var mapView: some View {
-        Map(
-            coordinateRegion: $viewModel.cameraRegion,
-            interactionModes: .all,
-            showsUserLocation: false,
-            userTrackingMode: .none,
-            annotationItems: annotationItems
-        ) { item in
-            MapAnnotation(coordinate: item.coordinate) {
-                BusAnnotationView(bus: item.bus)
-            }
-        }
-        .mapControls {
-            MapCompass()
-            MapScaleView()
-            MapPitchToggle()
-            MapUserLocationButton()
-        }
-    }
-
-    @ViewBuilder
-    private var loadingIndicator: some View {
-        if viewModel.isLoading {
-            ProgressView()
-                .padding(8)
-                .background(.ultraThinMaterial, in: .capsule)
-                .padding()
-        }
-    }
-
-    @ViewBuilder
-    private var bottomOverlay: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Spacer()
-            focusedBusNotice
-            filterButtons
-        }
-        .padding()
-    }
-
-    @ViewBuilder
-    private var focusedBusNotice: some View {
-        if let bus = focusedBus {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "scope")
-                    .font(.title3)
-                    .foregroundStyle(.tint)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Showing selected bus")
-                        .font(.caption.smallCaps())
-                        .foregroundStyle(Color.secondary)
-
-                    Text(bus.routeLabel ?? bus.title)
-                        .font(.headline)
-
-                    Text(bus.destinationLabel)
-                        .font(.subheadline)
-                        .foregroundStyle(Color.secondary)
-                }
-
-                Spacer()
-
-                Button(role: .cancel) {
-                    focusedBusID = nil
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title3)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding()
-            .background(
-                .ultraThinMaterial,
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
-        }
-    }
-
-    private var filterButtons: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Button { isShowingList.toggle() } label: {
-                Label("Buses", systemImage: "bus")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-
-            if hasActiveFilters {
-                Button(role: .destructive) { resetFilters() } label: {
-                    Label(clearFiltersLabel, systemImage: "line.3.horizontal.decrease.circle")
-                        .labelStyle(.titleAndIcon)
-                        .font(.headline)
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-        .padding()
-        .background(
-            .ultraThinMaterial,
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-        )
-    }
-
-    private var busListSheet: some View {
-        BusListSheet(
-            buses: filteredBuses,
-            allRoutes: sortedRoutes,
-            selectedRoutes: $selectedRoutes,
-            searchQuery: $searchQuery,
-            selectedBusID: focusedBusID,
-            isShowingSelectedBus: focusedBusID != nil,
-            onSelect: { bus in
-                focusedBusID = bus.id
-                isShowingList = false
-                viewModel.focus(on: bus)
-            },
-            onReset: {
-                resetFilters()
-                isShowingList = false
-            },
-            displayedBusCount: filteredBuses.count,
-            totalBusCount: viewModel.buses.count
-        )
-    }
-
-    private var errorBinding: Binding<Bool> {
-        Binding(
-            get: { viewModel.errorMessage != nil },
-            set: { newValue in
-                if !newValue {
-                    viewModel.errorMessage = nil
-                }
-            }
-        )
     }
 
     private var filteredBuses: [Bus] {
@@ -201,13 +159,6 @@ struct ContentView: View {
                 }
                 return lhsRoute.localizedCaseInsensitiveCompare(rhsRoute) == .orderedAscending
             }
-    }
-
-    private var annotationItems: [BusAnnotationItem] {
-        filteredBuses.compactMap { bus in
-            guard let coordinate = bus.coordinate else { return nil }
-            return BusAnnotationItem(bus: bus, coordinate: coordinate)
-        }
     }
 
     private var sortedRoutes: [String] {
@@ -259,35 +210,6 @@ struct ContentView: View {
     }
 }
 
-private struct BusAnnotationView: View {
-    let bus: Bus
-
-    var body: some View {
-        VStack(spacing: 4) {
-            if let badge = bus.lineBadgeText {
-                Text(badge)
-                    .font(.caption2.bold())
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .background(.tint, in: Capsule())
-                    .foregroundStyle(.white)
-            }
-
-            Image(systemName: "bus.fill")
-                .font(.title2)
-                .padding(6)
-                .background(.thinMaterial, in: Circle())
-        }
-    }
-}
-
-private struct BusAnnotationItem: Identifiable {
-    let bus: Bus
-    let coordinate: CLLocationCoordinate2D
-
-    var id: String { bus.id }
-}
-
 private struct BusListSheet: View {
     let buses: [Bus]
     let allRoutes: [String]
@@ -328,28 +250,30 @@ private struct BusListSheet: View {
                         ForEach(buses) { bus in
                             Button {
                                 onSelect(bus)
-                                dismiss()
                             } label: {
-                                BusRow(bus: bus, isFocused: bus.id == selectedBusID)
+                                BusListRow(bus: bus, isSelected: bus.id == selectedBusID)
                             }
                             .buttonStyle(.plain)
                         }
                     }
                 }
             }
-            .navigationTitle("Buses")
+            .navigationTitle("Bus list")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button(isShowingSelectedBus ? "Show all" : "Clear") {
-                        onReset()
-                        dismiss()
+                ToolbarItem(placement: .topBarTrailing) {
+                    if hasActiveFilters {
+                        Button("Clear filters") { onReset() }
                     }
                 }
             }
         }
+    }
+
+    private var hasActiveFilters: Bool {
+        !selectedRoutes.isEmpty || !searchQuery.isEmpty || isShowingSelectedBus
     }
 
     private func toggleRoute(_ route: String) {
@@ -361,49 +285,13 @@ private struct BusListSheet: View {
     }
 }
 
-private struct BusRow: View {
-    let bus: Bus
-    let isFocused: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: isFocused ? "scope" : "bus.fill")
-                .font(.title2)
-                .foregroundStyle(isFocused ? Color.accentColor : Color.secondary)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(bus.routeLabel ?? bus.title)
-                        .font(.headline)
-                    Spacer()
-                    if let badge = bus.lineBadgeText {
-                        Text(badge)
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 4)
-                            .background(.tint.opacity(0.2), in: Capsule())
-                    }
-                }
-
-                Text(bus.destinationLabel)
-                    .font(.subheadline)
-                    .foregroundStyle(Color.secondary)
-
-                Text(bus.occupancyDescription)
-                    .font(.footnote)
-                    .foregroundStyle(Color.secondary)
-            }
-        }
-    }
-}
-
 private struct MultipleSelectionRow: View {
     let title: String
     let isSelected: Bool
-    let onTap: () -> Void
+    let action: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
+        Button(action: action) {
             HStack {
                 Text(title)
                 Spacer()
@@ -413,6 +301,98 @@ private struct MultipleSelectionRow: View {
                 }
             }
         }
+        .buttonStyle(.plain)
+        .accessibilityElement()
+        .accessibilityLabel(title)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+    }
+}
+
+private struct BusListRow: View {
+    let bus: Bus
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if isSelected {
+                Label("Showing on map", systemImage: "scope")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tint)
+            }
+
+            HStack {
+                Image(systemName: "bus")
+                Text(bus.routeLabel ?? bus.title)
+                    .font(.headline)
+                Spacer()
+                if let badge = bus.lineBadgeText {
+                    Text(badge)
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.thinMaterial, in: Capsule())
+                }
+            }
+
+            Text(bus.destinationLabel)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Text(bus.occupancyDescription)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
+            }
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private struct BusAnnotationView: View {
+    let bus: Bus
+
+    var body: some View {
+        VStack(spacing: 2) {
+            ZStack(alignment: .topTrailing) {
+                Circle()
+                    .fill(.thinMaterial)
+                    .frame(width: 48, height: 48)
+                    .overlay {
+                        Image(systemName: "bus.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.tint)
+                    }
+
+                if let badge = bus.lineBadgeText {
+                    Text(badge)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.blue.gradient, in: Capsule())
+                        .offset(x: 14, y: -14)
+                }
+            }
+
+            Circle()
+                .fill(.primary)
+                .frame(width: 6, height: 6)
+                .opacity(0.4)
+        }
+        .shadow(radius: 2, x: 0, y: 1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(bus.title)
+        .accessibilityHint(bus.subtitle)
     }
 }
 
