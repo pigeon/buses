@@ -395,7 +395,6 @@ struct ContentView: View {
     @StateObject private var vm = BusesViewModel()
     @State private var isShowingList = false
     @State private var selectedRoutes: Set<String> = []
-    @State private var occupancyFilter: OccupancyFilter = .all
     @State private var searchQuery: String = ""
     @State private var focusedBusID: String?
 
@@ -501,7 +500,6 @@ struct ContentView: View {
                     buses: filteredBuses,
                     allRoutes: sortedRoutes,
                     selectedRoutes: $selectedRoutes,
-                    occupancyFilter: $occupancyFilter,
                     searchQuery: $searchQuery,
                     selectedBusID: focusedBusID,
                     isShowingSelectedBus: focusedBusID != nil,
@@ -533,7 +531,6 @@ struct ContentView: View {
         return vm.buses
             .filter { bus in
                 matchesRouteFilter(bus: bus)
-                && matchesOccupancyFilter(bus: bus)
                 && matchesSearchQuery(bus: bus)
             }
             .sorted { lhs, rhs in
@@ -552,7 +549,7 @@ struct ContentView: View {
     }
 
     private var hasActiveFilters: Bool {
-        !selectedRoutes.isEmpty || occupancyFilter != .all || !searchQuery.isEmpty || focusedBusID != nil
+        !selectedRoutes.isEmpty || !searchQuery.isEmpty || focusedBusID != nil
     }
 
     private var clearFiltersLabel: String {
@@ -566,7 +563,6 @@ struct ContentView: View {
 
     private func resetFilters() {
         selectedRoutes.removeAll()
-        occupancyFilter = .all
         searchQuery = ""
         focusedBusID = nil
     }
@@ -575,21 +571,6 @@ struct ContentView: View {
         guard !selectedRoutes.isEmpty else { return true }
         guard let route = bus.routeLabel else { return false }
         return selectedRoutes.contains(route)
-    }
-
-    private func matchesOccupancyFilter(bus: Bus) -> Bool {
-        switch occupancyFilter {
-        case .all:
-            return true
-        case .manySeats:
-            return bus.occupancyLevel == .plenty
-        case .fewSeats:
-            return bus.occupancyLevel == .limited
-        case .full:
-            return bus.occupancyLevel == .full
-        case .unknown:
-            return bus.occupancyLevel == .unknown
-        }
     }
 
     private func matchesSearchQuery(bus: Bus) -> Bool {
@@ -618,36 +599,10 @@ private enum BusOccupancyLevel: String {
     case full
 }
 
-private enum OccupancyFilter: String, CaseIterable, Identifiable {
-    case all
-    case manySeats
-    case fewSeats
-    case full
-    case unknown
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .all:
-            return "All occupancy"
-        case .manySeats:
-            return "Many seats"
-        case .fewSeats:
-            return "Few seats"
-        case .full:
-            return "Full"
-        case .unknown:
-            return "Unknown"
-        }
-    }
-}
-
 private struct BusListSheet: View {
     let buses: [Bus]
     let allRoutes: [String]
     @Binding var selectedRoutes: Set<String>
-    @Binding var occupancyFilter: OccupancyFilter
     @Binding var searchQuery: String
     let selectedBusID: String?
     let isShowingSelectedBus: Bool
@@ -669,15 +624,6 @@ private struct BusListSheet: View {
                             }
                         }
                     }
-                }
-
-                Section("Occupancy") {
-                    Picker("Occupancy", selection: $occupancyFilter) {
-                        ForEach(OccupancyFilter.allCases) { filter in
-                            Text(filter.label).tag(filter)
-                        }
-                    }
-                    .pickerStyle(.segmented)
                 }
 
                 Section("Search") {
@@ -716,7 +662,7 @@ private struct BusListSheet: View {
     }
 
     private var hasActiveFilters: Bool {
-        !selectedRoutes.isEmpty || occupancyFilter != .all || !searchQuery.isEmpty || isShowingSelectedBus
+        !selectedRoutes.isEmpty || !searchQuery.isEmpty || isShowingSelectedBus
     }
 
     private func toggleRoute(_ route: String) {
