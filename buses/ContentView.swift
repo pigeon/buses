@@ -403,7 +403,7 @@ struct ContentView: View {
         NavigationStack {
             ZStack(alignment: .top) {
                 Map(position: $vm.cameraPosition) {
-                    ForEach(filteredBuses) { bus in
+                    ForEach(self.filteredBuses) { bus in
                         if let coord = bus.coordinate {
                             Annotation(bus.title, coordinate: coord) {
                                 BusAnnotationView(bus: bus)
@@ -418,7 +418,7 @@ struct ContentView: View {
                     MapUserLocationButton()
                 }
 
-                if vm.isLoading {
+                if self.vm.isLoading {
                     ProgressView()
                         .padding(8)
                         .background(.ultraThinMaterial, in: .capsule)
@@ -427,7 +427,7 @@ struct ContentView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Spacer()
-                    if let bus = focusedBus {
+                    if let bus = self.focusedBus {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: "scope")
@@ -448,7 +448,7 @@ struct ContentView: View {
                             }
 
                             Button {
-                                focusedBusID = nil
+                                self.focusedBusID = nil
                             } label: {
                                 Label("Show all buses", systemImage: "line.3.horizontal.decrease")
                                     .font(.caption.weight(.semibold))
@@ -469,7 +469,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        Task { await vm.refresh() }
+                        Task { await self.vm.refresh() }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -477,62 +477,62 @@ struct ContentView: View {
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        isShowingList = true
+                        self.isShowingList = true
                     } label: {
                         Image(systemName: "list.bullet")
                     }
                     .accessibilityLabel("Open bus list")
                 }
             }
-            .task { await vm.refresh() }
-            .alert("Error", isPresented: Binding(get: { vm.errorMessage != nil }, set: { newValue in
+            .task { await self.vm.refresh() }
+            .alert("Error", isPresented: Binding(get: { self.vm.errorMessage != nil }, set: { newValue in
                 if !newValue {
-                    vm.errorMessage = nil
+                    self.vm.errorMessage = nil
                 }
             })) {
-                Button("OK", role: .cancel) { vm.errorMessage = nil }
+                Button("OK", role: .cancel) { self.vm.errorMessage = nil }
             } message: {
-                Text(vm.errorMessage ?? "Unknown error")
+                Text(self.vm.errorMessage ?? "Unknown error")
             }
             .sheet(isPresented: $isShowingList) {
                 BusListSheet(
-                    buses: filteredBuses,
-                    allRoutes: sortedRoutes,
+                    buses: self.filteredBuses,
+                    allRoutes: self.sortedRoutes,
                     selectedRoutes: $selectedRoutes,
                     occupancyFilter: $occupancyFilter,
                     searchQuery: $searchQuery,
-                    selectedBusID: focusedBusID,
-                    isShowingSelectedBus: focusedBusID != nil,
+                    selectedBusID: self.focusedBusID,
+                    isShowingSelectedBus: self.focusedBusID != nil,
                     onSelect: { bus in
-                        focusedBusID = bus.id
-                        vm.focus(on: bus)
-                        isShowingList = false
+                        self.focusedBusID = bus.id
+                        self.vm.focus(on: bus)
+                        self.isShowingList = false
                     },
-                    onReset: resetFilters,
-                    displayedBusCount: filteredBuses.count,
-                    totalBusCount: vm.buses.count
+                    onReset: self.resetFilters,
+                    displayedBusCount: self.filteredBuses.count,
+                    totalBusCount: self.vm.buses.count
                 )
                 .presentationDetents([.medium, .large])
             }
-            .onChange(of: vm.buses) { newValue in
+            .onChange(of: self.vm.buses) { newValue in
                 let availableRoutes = Set(newValue.compactMap { $0.routeLabel })
-                selectedRoutes = selectedRoutes.intersection(availableRoutes)
-                ensureFocusedBusExists(in: newValue)
+                self.selectedRoutes = self.selectedRoutes.intersection(availableRoutes)
+                self.ensureFocusedBusExists(in: newValue)
             }
         }
     }
 
     private var filteredBuses: [Bus] {
-        if let focusedID = focusedBusID,
-           let selectedBus = vm.buses.first(where: { $0.id == focusedID }) {
+        if let focusedID = self.focusedBusID,
+           let selectedBus = self.vm.buses.first(where: { $0.id == focusedID }) {
             return [selectedBus]
         }
 
-        return vm.buses
+        return self.vm.buses
             .filter { bus in
-                matchesRouteFilter(bus: bus)
-                && matchesOccupancyFilter(bus: bus)
-                && matchesSearchQuery(bus: bus)
+                self.matchesRouteFilter(bus: bus)
+                && self.matchesOccupancyFilter(bus: bus)
+                && self.matchesSearchQuery(bus: bus)
             }
             .sorted { lhs, rhs in
                 let lhsRoute = lhs.routeLabel ?? lhs.title
@@ -545,30 +545,30 @@ struct ContentView: View {
     }
 
     private var sortedRoutes: [String] {
-        let routes = vm.buses.compactMap { $0.routeLabel }
+        let routes = self.vm.buses.compactMap { $0.routeLabel }
         return Array(Set(routes)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     private var focusedBus: Bus? {
-        guard let focusedBusID else { return nil }
-        return vm.buses.first(where: { $0.id == focusedBusID })
+        guard let focusedBusID = self.focusedBusID else { return nil }
+        return self.vm.buses.first(where: { $0.id == focusedBusID })
     }
 
     private func resetFilters() {
-        selectedRoutes.removeAll()
-        occupancyFilter = .all
-        searchQuery = ""
-        focusedBusID = nil
+        self.selectedRoutes.removeAll()
+        self.occupancyFilter = .all
+        self.searchQuery = ""
+        self.focusedBusID = nil
     }
 
     private func matchesRouteFilter(bus: Bus) -> Bool {
-        guard !selectedRoutes.isEmpty else { return true }
+        guard !self.selectedRoutes.isEmpty else { return true }
         guard let route = bus.routeLabel else { return false }
-        return selectedRoutes.contains(route)
+        return self.selectedRoutes.contains(route)
     }
 
     private func matchesOccupancyFilter(bus: Bus) -> Bool {
-        switch occupancyFilter {
+        switch self.occupancyFilter {
         case .all:
             return true
         case .manySeats:
@@ -583,8 +583,8 @@ struct ContentView: View {
     }
 
     private func matchesSearchQuery(bus: Bus) -> Bool {
-        guard !searchQuery.isEmpty else { return true }
-        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !self.searchQuery.isEmpty else { return true }
+        let query = self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return true }
         let lowerQuery = query.lowercased()
         let haystack = [bus.title, bus.destinationLabel, bus.routeLabel ?? ""]
@@ -594,9 +594,9 @@ struct ContentView: View {
     }
 
     private func ensureFocusedBusExists(in buses: [Bus]) {
-        guard let currentFocusedID = focusedBusID else { return }
+        guard let currentFocusedID = self.focusedBusID else { return }
         if !buses.contains(where: { $0.id == currentFocusedID }) {
-            focusedBusID = nil
+            self.focusedBusID = nil
         }
     }
 }
