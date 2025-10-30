@@ -12,88 +12,9 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                MapReader { _ in
-                    Map(position: $viewModel.cameraPosition) {
-                        ForEach(filteredBuses) { bus in
-                            if let coordinate = bus.coordinate {
-                                Annotation(bus.title, coordinate: coordinate) {
-                                    BusAnnotationView(bus: bus)
-                                }
-                            }
-                        }
-                    }
-                    .mapControls {
-                        MapCompass()
-                        MapScaleView()
-                        MapPitchToggle()
-                        MapUserLocationButton()
-                    }
-                    .onMapCameraChange(frequency: .continuous) { context in
-                        if context.reason == .userInteraction {
-                            isCameraFrozen = true
-                        }
-                    }
-                }
-
-                if viewModel.isLoading {
-                    ProgressView()
-                        .padding(8)
-                        .background(.ultraThinMaterial, in: .capsule)
-                        .padding()
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Spacer()
-
-                    if let bus = focusedBus {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "scope")
-                                .font(.title3)
-                                .foregroundStyle(.tint)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Showing selected bus")
-                                    .font(.caption.smallCaps())
-                                    .foregroundStyle(.secondary)
-
-                                Text(bus.routeLabel ?? bus.title)
-                                    .font(.headline)
-
-                                Text(bus.destinationLabel)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(14)
-                        .background(
-                            .thinMaterial,
-                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        )
-                        .padding(.horizontal)
-                    }
-
-                    HStack {
-                        if hasActiveFilters {
-                            Button { resetFilters() } label: {
-                                Label(clearFiltersLabel, systemImage: "xmark.circle.fill")
-                                    .font(.subheadline)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-
-                        if isCameraFrozen {
-                            Button { recenterCamera() } label: {
-                                Label("Recenter map", systemImage: "location.circle")
-                                    .font(.subheadline)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom, 20)
-                }
+                mapLayer
+                loadingIndicator
+                overlayControls
             }
             .navigationTitle("Go Coach Buses")
             .toolbar {
@@ -183,6 +104,98 @@ struct ContentView: View {
                     updateCameraForFilters(force: true)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var mapLayer: some View {
+        MapReader { _ in
+            Map(position: $viewModel.cameraPosition) {
+                ForEach(filteredBuses) { bus in
+                    if let coordinate = bus.coordinate {
+                        Annotation(bus.title, coordinate: coordinate) {
+                            BusAnnotationView(bus: bus)
+                        }
+                    }
+                }
+            }
+            .mapControls {
+                MapCompass()
+                MapScaleView()
+                MapPitchToggle()
+                MapUserLocationButton()
+            }
+            .onMapCameraChange(frequency: .continuous) { context in
+                if context.reason == .userInteraction {
+                    isCameraFrozen = true
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var loadingIndicator: some View {
+        if viewModel.isLoading {
+            ProgressView()
+                .padding(8)
+                .background(.ultraThinMaterial, in: .capsule)
+                .padding()
+        }
+    }
+
+    @ViewBuilder
+    private var overlayControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Spacer()
+
+            if let bus = focusedBus {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "scope")
+                        .font(.title3)
+                        .foregroundStyle(.tint)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Showing selected bus")
+                            .font(.caption.smallCaps())
+                            .foregroundStyle(.secondary)
+
+                        Text(bus.routeLabel ?? bus.title)
+                            .font(.headline)
+
+                        Text(bus.destinationLabel)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(14)
+                .background(
+                    .thinMaterial,
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+                .padding(.horizontal)
+            }
+
+            HStack {
+                if hasActiveFilters {
+                    Button { resetFilters() } label: {
+                        Label(clearFiltersLabel, systemImage: "xmark.circle.fill")
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if isCameraFrozen {
+                    Button { recenterCamera() } label: {
+                        Label("Recenter map", systemImage: "location.circle")
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 20)
         }
     }
 
