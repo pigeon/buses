@@ -109,27 +109,38 @@ struct ContentView: View {
 
     @ViewBuilder
     private var mapLayer: some View {
-        MapReader { _ in
-            Map(position: $viewModel.cameraPosition) {
-                ForEach(filteredBuses) { bus in
-                    if let coordinate = bus.coordinate {
-                        Annotation(bus.title, coordinate: coordinate) {
-                            BusAnnotationView(bus: bus)
+        if #available(iOS 17.0, *) {
+            MapReader { _ in
+                mapContent
+                    .onMapCameraChange(frequency: .continuous) { context in
+                        if context.reason == .userInteraction {
+                            isCameraFrozen = true
                         }
+                    }
+            }
+        } else {
+            mapContent
+                .onMapCameraChange {
+                    isCameraFrozen = true
+                }
+        }
+    }
+
+    private var mapContent: some View {
+        Map(position: $viewModel.cameraPosition) {
+            ForEach(filteredBuses) { bus in
+                if let coordinate = bus.coordinate {
+                    Annotation(bus.title, coordinate: coordinate) {
+                        BusAnnotationView(bus: bus)
                     }
                 }
             }
-            .mapControls {
-                MapCompass()
-                MapScaleView()
-                MapPitchToggle()
-                MapUserLocationButton()
-            }
-            .onMapCameraChange(frequency: .continuous) { context in
-                if context.reason == .userInteraction {
-                    isCameraFrozen = true
-                }
-            }
+        }
+        .mapControls {
+            MapCompass()
+            MapScaleView()
+            MapPitchToggle()
+            MapUserLocationButton()
         }
     }
 
