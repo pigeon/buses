@@ -1,6 +1,5 @@
 import SwiftUI
 import MapKit
-import _MapKit_SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = BusesViewModel()
@@ -108,25 +107,6 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var mapLayer: some View {
-        if #available(iOS 17.0, *) {
-            MapReader { _ in
-                mapContent
-                    .onMapCameraChange(frequency: .continuous) { (context: MapCameraChangeContext) in
-                        if context.reason == .userInteraction {
-                            isCameraFrozen = true
-                        }
-                    }
-            }
-        } else {
-            mapContent
-                .onMapCameraChange {
-                    isCameraFrozen = true
-                }
-        }
-    }
-
     private var mapContent: some View {
         Map(position: $viewModel.cameraPosition) {
             ForEach(filteredBuses) { bus in
@@ -143,6 +123,23 @@ struct ContentView: View {
             MapPitchToggle()
             MapUserLocationButton()
         }
+        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in
+            freezeCameraForUserInteraction()
+        })
+        .simultaneousGesture(MagnificationGesture().onChanged { _ in
+            freezeCameraForUserInteraction()
+        })
+        .simultaneousGesture(RotationGesture().onChanged { _ in
+            freezeCameraForUserInteraction()
+        })
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
+            freezeCameraForUserInteraction()
+        })
+    }
+
+    @ViewBuilder
+    private var mapLayer: some View {
+        mapContent
     }
 
     @ViewBuilder
@@ -287,6 +284,11 @@ struct ContentView: View {
 
     private var hasQueryOrRouteFilters: Bool {
         !selectedRoutes.isEmpty || !searchQuery.isEmpty
+    }
+
+    private func freezeCameraForUserInteraction() {
+        guard !isCameraFrozen else { return }
+        isCameraFrozen = true
     }
 
     private func recenterCamera() {
