@@ -50,26 +50,42 @@ final class BusesViewModel: ObservableObject {
             return
         }
 
-        var minLat = 90.0, maxLat = -90.0, minLon = 180.0, maxLon = -180.0
-        for c in coords {
-            minLat = min(minLat, c.latitude)
-            maxLat = max(maxLat, c.latitude)
-            minLon = min(minLon, c.longitude)
-            maxLon = max(maxLon, c.longitude)
+        var minX = Double.greatestFiniteMagnitude
+        var maxX = -Double.greatestFiniteMagnitude
+        var minY = Double.greatestFiniteMagnitude
+        var maxY = -Double.greatestFiniteMagnitude
+
+        for coordinate in coords {
+            let point = MKMapPoint(coordinate)
+            minX = min(minX, point.x)
+            maxX = max(maxX, point.x)
+            minY = min(minY, point.y)
+            maxY = max(maxY, point.y)
         }
 
-        let latPad = max((maxLat - minLat) * 0.2, 0.02)
-        let lonPad = max((maxLon - minLon) * 0.2, 0.02)
+        let minimumDimension: Double = 1_000
 
-        let center = CLLocationCoordinate2D(
-            latitude: (minLat + maxLat) / 2.0,
-            longitude: (minLon + maxLon) / 2.0
-        )
-        let span = MKCoordinateSpan(
-            latitudeDelta: (maxLat - minLat) + latPad,
-            longitudeDelta: (maxLon - minLon) + lonPad
-        )
-        let region = MKCoordinateRegion(center: center, span: span)
-        cameraPosition = .region(region)
+        if (maxX - minX) < minimumDimension {
+            let adjustment = (minimumDimension - (maxX - minX)) / 2
+            minX -= adjustment
+            maxX += adjustment
+        }
+
+        if (maxY - minY) < minimumDimension {
+            let adjustment = (minimumDimension - (maxY - minY)) / 2
+            minY -= adjustment
+            maxY += adjustment
+        }
+
+        var rect = MKMapRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+
+        let paddingRatio = 0.2
+        let widthPadding = max(rect.size.width * paddingRatio, minimumDimension * 0.1)
+        let heightPadding = max(rect.size.height * paddingRatio, minimumDimension * 0.1)
+
+        rect = rect.insetBy(dx: -widthPadding, dy: -heightPadding)
+        rect = rect.intersection(.world)
+
+        cameraPosition = .rect(rect)
     }
 }
