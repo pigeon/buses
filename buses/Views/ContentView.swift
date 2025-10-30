@@ -97,7 +97,21 @@ struct ContentView: View {
                     .accessibilityLabel("Open bus list")
                 }
             }
-            .task { await viewModel.refresh() }
+            .task {
+                await viewModel.refresh()
+
+                let thirtySeconds: UInt64 = 30_000_000_000
+
+                while !Task.isCancelled {
+                    do {
+                        try await Task.sleep(nanoseconds: thirtySeconds)
+                    } catch {
+                        break
+                    }
+
+                    await viewModel.refresh()
+                }
+            }
             .alert(
                 "Error",
                 isPresented: Binding(

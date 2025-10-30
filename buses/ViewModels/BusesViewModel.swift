@@ -11,6 +11,7 @@ final class BusesViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     func refresh() async {
+        guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
         do {
