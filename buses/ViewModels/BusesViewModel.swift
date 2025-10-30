@@ -30,6 +30,10 @@ final class BusesViewModel: ObservableObject {
         cameraPosition = .region(region)
     }
 
+    func fitToBuses(_ buses: [Bus]) {
+        updateCameraToFit(buses: buses)
+    }
+
     private func updateCameraToFit(buses: [Bus]) {
         let coords = buses.compactMap { $0.coordinate }
         guard !coords.isEmpty else { return }
