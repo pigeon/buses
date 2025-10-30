@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import _MapKit_SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = BusesViewModel()
@@ -112,7 +113,7 @@ struct ContentView: View {
         if #available(iOS 17.0, *) {
             MapReader { _ in
                 mapContent
-                    .onMapCameraChange(frequency: .continuous) { context in
+                    .onMapCameraChange(frequency: .continuous) { (context: MapCameraChangeContext) in
                         if context.reason == .userInteraction {
                             isCameraFrozen = true
                         }
