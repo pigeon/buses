@@ -64,26 +64,25 @@ final class BusesViewModel: ObservableObject {
         }
 
         let minimumDimension: Double = 1_000
+        let width = max(maxX - minX, minimumDimension)
+        let height = max(maxY - minY, minimumDimension)
 
-        if (maxX - minX) < minimumDimension {
-            let adjustment = (minimumDimension - (maxX - minX)) / 2
-            minX -= adjustment
-            maxX += adjustment
-        }
+        let centerX = (maxX + minX) / 2
+        let centerY = (maxY + minY) / 2
 
-        if (maxY - minY) < minimumDimension {
-            let adjustment = (minimumDimension - (maxY - minY)) / 2
-            minY -= adjustment
-            maxY += adjustment
-        }
+        let originX = centerX - (width / 2)
+        let originY = centerY - (height / 2)
 
-        var rect = MKMapRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        var rect = MKMapRect(x: originX, y: originY, width: width, height: height)
 
         let paddingRatio = 0.2
-        let widthPadding = max(rect.size.width * paddingRatio, minimumDimension * 0.1)
-        let heightPadding = max(rect.size.height * paddingRatio, minimumDimension * 0.1)
+        let paddedWidth = width * (1 + paddingRatio * 2)
+        let paddedHeight = height * (1 + paddingRatio * 2)
 
-        rect = rect.insetBy(dx: -widthPadding, dy: -heightPadding)
+        let paddedSize = MKMapSize(width: paddedWidth, height: paddedHeight)
+        let paddedOrigin = MKMapPoint(x: centerX - paddedWidth / 2, y: centerY - paddedHeight / 2)
+
+        rect = MKMapRect(origin: paddedOrigin, size: paddedSize)
         rect = rect.intersection(.world)
 
         cameraPosition = .rect(rect)
