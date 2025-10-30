@@ -136,6 +136,18 @@ struct ContentView: View {
                 let availableRoutes = Set(newValue.compactMap { $0.routeLabel })
                 selectedRoutes = selectedRoutes.intersection(availableRoutes)
                 ensureFocusedBusExists(in: newValue)
+                updateCameraForFilters()
+            }
+            .onChange(of: selectedRoutes) { _ in
+                updateCameraForFilters()
+            }
+            .onChange(of: searchQuery) { _ in
+                updateCameraForFilters()
+            }
+            .onChange(of: focusedBusID) { newValue in
+                if newValue == nil {
+                    updateCameraForFilters()
+                }
             }
         }
     }
@@ -183,6 +195,7 @@ struct ContentView: View {
         selectedRoutes.removeAll()
         searchQuery = ""
         focusedBusID = nil
+        updateCameraForFilters()
     }
 
     private func matchesRouteFilter(bus: Bus) -> Bool {
@@ -207,6 +220,11 @@ struct ContentView: View {
         if !buses.contains(where: { $0.id == currentFocusedID }) {
             focusedBusID = nil
         }
+    }
+
+    private func updateCameraForFilters() {
+        guard focusedBusID == nil else { return }
+        viewModel.fitToBuses(filteredBuses)
     }
 }
 
