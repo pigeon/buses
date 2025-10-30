@@ -83,7 +83,7 @@ final class BusTests: XCTestCase {
         let bus = try makeBus()
 
         XCTAssertNotNil(bus.coordinate)
-        XCTAssertEqual(bus.coordinate?.latitude, 52.1234, accuracy: 0.0001)
-        XCTAssertEqual(bus.coordinate?.longitude, -0.1234, accuracy: 0.0001)
+        XCTAssertEqual(bus.coordinate!.latitude, 52.1234, accuracy: 0.0001)
+        XCTAssertEqual(bus.coordinate!.longitude, -0.1234, accuracy: 0.0001)
     }
 }
