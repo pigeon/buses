@@ -83,7 +83,9 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        Task { await viewModel.refresh() }
+                        Task {
+                            await viewModel.refresh(shouldUpdateCamera: shouldAllowCameraAutoUpdate)
+                        }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -109,7 +111,7 @@ struct ContentView: View {
                         break
                     }
 
-                    await viewModel.refresh()
+                    await viewModel.refresh(shouldUpdateCamera: shouldAllowCameraAutoUpdate)
                 }
             }
             .alert(
@@ -194,6 +196,10 @@ struct ContentView: View {
 
     private var hasActiveFilters: Bool {
         !selectedRoutes.isEmpty || !searchQuery.isEmpty || focusedBusID != nil
+    }
+
+    private var shouldAllowCameraAutoUpdate: Bool {
+        !hasActiveFilters
     }
 
     private var clearFiltersLabel: String {

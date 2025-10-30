@@ -10,14 +10,16 @@ final class BusesViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
-    func refresh() async {
+    func refresh(shouldUpdateCamera: Bool = true) async {
         guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
         do {
             let items = try await BusService.shared.fetchBuses()
             buses = items
-            updateCameraToFit(buses: items)
+            if shouldUpdateCamera {
+                updateCameraToFit(buses: items)
+            }
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
