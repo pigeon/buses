@@ -50,12 +50,22 @@ final class BusesViewModel: ObservableObject {
             return
         }
 
-        var minX = Double.greatestFiniteMagnitude
-        var maxX = -Double.greatestFiniteMagnitude
-        var minY = Double.greatestFiniteMagnitude
-        var maxY = -Double.greatestFiniteMagnitude
+        cameraPosition = .rect(mapRect(for: coords))
+    }
 
-        for coordinate in coords {
+    private func mapRect(for coordinates: [CLLocationCoordinate2D]) -> MKMapRect {
+        guard let firstPoint = coordinates.first.map(MKMapPoint.init) else {
+            return .null
+        }
+        var minX = firstPoint.x
+        var maxX = firstPoint.x
+        var minY = firstPoint.y
+        var maxY = firstPoint.y
+
+        let minimumDimension: Double = 1_000
+        let paddingRatio: Double = 0.2
+
+        for coordinate in coordinates.dropFirst() {
             let point = MKMapPoint(coordinate)
             minX = min(minX, point.x)
             maxX = max(maxX, point.x)
@@ -63,28 +73,24 @@ final class BusesViewModel: ObservableObject {
             maxY = max(maxY, point.y)
         }
 
-        let minimumDimension: Double = 1_000
-        let width = max(maxX - minX, minimumDimension)
-        let height = max(maxY - minY, minimumDimension)
-
         let centerX = (maxX + minX) / 2
         let centerY = (maxY + minY) / 2
 
-        let originX = centerX - (width / 2)
-        let originY = centerY - (height / 2)
+        let width = max(maxX - minX, minimumDimension)
+        let height = max(maxY - minY, minimumDimension)
 
-        var rect = MKMapRect(x: originX, y: originY, width: width, height: height)
+        let baseRect = MKMapRect(
+            origin: MKMapPoint(x: centerX - width / 2, y: centerY - height / 2),
+            size: MKMapSize(width: width, height: height)
+        )
 
-        let paddingRatio = 0.2
-        let paddedWidth = width * (1 + paddingRatio * 2)
-        let paddedHeight = height * (1 + paddingRatio * 2)
+        let horizontalPadding = baseRect.size.width * paddingRatio
+        let verticalPadding = baseRect.size.height * paddingRatio
 
-        let paddedSize = MKMapSize(width: paddedWidth, height: paddedHeight)
-        let paddedOrigin = MKMapPoint(x: centerX - paddedWidth / 2, y: centerY - paddedHeight / 2)
+        let paddedRect = baseRect
+            .insetBy(dx: -horizontalPadding, dy: -verticalPadding)
+            .intersection(.world)
 
-        rect = MKMapRect(origin: paddedOrigin, size: paddedSize)
-        rect = rect.intersection(.world)
-
-        cameraPosition = .rect(rect)
+        return paddedRect
     }
 }
