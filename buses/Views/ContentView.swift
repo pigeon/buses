@@ -7,24 +7,32 @@ struct ContentView: View {
     @State private var selectedRoutes: Set<String> = []
     @State private var searchQuery: String = ""
     @State private var focusedBusID: String?
+    @State private var isCameraFrozen = false
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                Map(position: $viewModel.cameraPosition) {
-                    ForEach(filteredBuses) { bus in
-                        if let coordinate = bus.coordinate {
-                            Annotation(bus.title, coordinate: coordinate) {
-                                BusAnnotationView(bus: bus)
+                MapReader { _ in
+                    Map(position: $viewModel.cameraPosition) {
+                        ForEach(filteredBuses) { bus in
+                            if let coordinate = bus.coordinate {
+                                Annotation(bus.title, coordinate: coordinate) {
+                                    BusAnnotationView(bus: bus)
+                                }
                             }
                         }
                     }
-                }
-                .mapControls {
-                    MapCompass()
-                    MapScaleView()
-                    MapPitchToggle()
-                    MapUserLocationButton()
+                    .mapControls {
+                        MapCompass()
+                        MapScaleView()
+                        MapPitchToggle()
+                        MapUserLocationButton()
+                    }
+                    .onMapCameraChange(frequency: .continuous) { context in
+                        if context.reason == .userInteraction {
+                            isCameraFrozen = true
+                        }
+                    }
                 }
 
                 if viewModel.isLoading {
@@ -68,6 +76,14 @@ struct ContentView: View {
                         if hasActiveFilters {
                             Button { resetFilters() } label: {
                                 Label(clearFiltersLabel, systemImage: "xmark.circle.fill")
+                                    .font(.subheadline)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        if isCameraFrozen {
+                            Button { recenterCamera() } label: {
+                                Label("Recenter map", systemImage: "location.circle")
                                     .font(.subheadline)
                             }
                             .buttonStyle(.bordered)
@@ -155,14 +171,16 @@ struct ContentView: View {
                 updateCameraForFilters()
             }
             .onChange(of: selectedRoutes) { _ in
-                updateCameraForFilters()
+                isCameraFrozen = false
+                updateCameraForFilters(force: true)
             }
             .onChange(of: searchQuery) { _ in
-                updateCameraForFilters()
+                isCameraFrozen = false
+                updateCameraForFilters(force: true)
             }
             .onChange(of: focusedBusID) { newValue in
                 if newValue == nil {
-                    updateCameraForFilters()
+                    updateCameraForFilters(force: true)
                 }
             }
         }
@@ -199,7 +217,7 @@ struct ContentView: View {
     }
 
     private var shouldAllowCameraAutoUpdate: Bool {
-        !hasActiveFilters
+        !hasActiveFilters && !isCameraFrozen
     }
 
     private var clearFiltersLabel: String {
@@ -215,7 +233,7 @@ struct ContentView: View {
         selectedRoutes.removeAll()
         searchQuery = ""
         focusedBusID = nil
-        updateCameraForFilters()
+        recenterCamera()
     }
 
     private func matchesRouteFilter(bus: Bus) -> Bool {
@@ -242,8 +260,27 @@ struct ContentView: View {
         }
     }
 
-    private func updateCameraForFilters() {
+    private var hasQueryOrRouteFilters: Bool {
+        !selectedRoutes.isEmpty || !searchQuery.isEmpty
+    }
+
+    private func recenterCamera() {
+        isCameraFrozen = false
+
+        if let bus = focusedBus {
+            viewModel.focus(on: bus)
+        } else if hasQueryOrRouteFilters {
+            viewModel.fitToBuses(filteredBuses)
+        } else {
+            viewModel.fitToBuses(viewModel.buses)
+        }
+    }
+
+    private func updateCameraForFilters(force: Bool = false) {
         guard focusedBusID == nil else { return }
+        guard hasQueryOrRouteFilters else { return }
+        guard force || !isCameraFrozen else { return }
+
         viewModel.fitToBuses(filteredBuses)
     }
 }
