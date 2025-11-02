@@ -12,14 +12,56 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Select Xcode 16
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer \
+            || sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer \
+            || sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+
+      - name: Ensure simulators are available
+        run: |
+          set -euo pipefail
+          if ! xcrun simctl list --json devices available | python3 - <<'PY'
+import json, sys
+for runtime in json.load(sys.stdin).get("devices", {}).values():
+    for device in runtime:
+        if device.get("isAvailable"):
+            sys.exit(0)
+sys.exit(1)
+PY
+          then
+            sudo xcodebuild -runFirstLaunch
+            sudo xcodebuild -downloadPlatform iOS
+          fi
+
       - name: Run unit tests
         run: |
           set -euo pipefail
           rm -rf TestResults.xcresult
+          DESTINATION_ID="$(
+            xcrun simctl list --json devices available | python3 - <<'PY'
+import json, sys
+preferred = {"iPhone 15", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max"}
+fallback = None
+for runtime_devices in json.load(sys.stdin).get("devices", {}).values():
+    for device in runtime_devices:
+        if not device.get("isAvailable"):
+            continue
+        if fallback is None:
+            fallback = device.get("udid")
+        if device.get("name") in preferred:
+            print(device["udid"])
+            sys.exit(0)
+if fallback:
+    print(fallback)
+    sys.exit(0)
+sys.exit("No available simulator devices found")
+PY
+          )"
           xcodebuild \
             -project buses.xcodeproj \
             -scheme buses \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -destination "platform=iOS Simulator,id=${DESTINATION_ID}" \
             -resultBundlePath TestResults \
             test
       - name: Upload test results
