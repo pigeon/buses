@@ -35,34 +35,25 @@ jobs:
               echo "Selecting Xcode ${version}"
               sudo xcode-select -s "${developer_dir}"
               xcodebuild -version
-              break
+              exit 0
             fi
           done
-          # If the above loop didn't exit, fall back to default if present
-          if ! xcodebuild -version >/dev/null 2>&1; then
-            if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
-              echo "Selecting default Xcode installation"
-              sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-              xcodebuild -version
-            else
-              echo "No supported Xcode installations were found" >&2
-              exit 1
-            fi
+          if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
+            echo "Selecting default Xcode installation"
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+            xcodebuild -version
+            exit 0
           fi
+          echo "No supported Xcode installations were found" >&2
+          exit 1
 
       - name: Ensure simulators are available
         shell: bash
         run: |
           set -euo pipefail
-          if ! xcrun simctl list --json devices | /usr/bin/python3 - <<'PY'
-import json, sys
-for devices in json.load(sys.stdin).get("devices", {}).values():
-    for d in devices:
-        if d.get("isAvailable"):
-            sys.exit(0)
-sys.exit(1)
-PY
-          then
+          if ! xcrun simctl list --json devices | /usr/bin/python3 -c 'import json,sys; 
+data=json.load(sys.stdin).get("devices",{}); 
+print(any(d.get("isAvailable") for v in data.values() for d in v))' | grep -q true; then
             sudo xcodebuild -runFirstLaunch || true
           fi
           xcrun simctl list devices
@@ -74,26 +65,25 @@ PY
           rm -rf TestResults
 
           DESTINATION_ID="$(
-            xcrun simctl list --json devices | /usr/bin/python3 - <<'PY'
-import json, sys
-data = json.load(sys.stdin).get("devices", {})
-preferred = {"iPhone 15", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max"}
-fallback = None
-for _, devices in data.items():
-    for d in devices:
-        if not d.get("isAvailable"):
-            continue
-        if fallback is None:
-            fallback = d.get("udid")
-        if d.get("name") in preferred:
-            print(d["udid"])
-            sys.exit(0)
-if fallback:
-    print(fallback)
-    sys.exit(0)
-sys.exit("No available simulator devices found")
-PY
+            xcrun simctl list --json devices | /usr/bin/python3 -c 'import json,sys;
+data=json.load(sys.stdin).get("devices",{})
+preferred={"iPhone 15","iPhone 15 Plus","iPhone 15 Pro","iPhone 15 Pro Max"}
+fallback=None
+for devices in data.values():
+  for d in devices:
+    if not d.get("isAvailable"): 
+      continue
+    if fallback is None:
+      fallback=d.get("udid")
+    if d.get("name") in preferred:
+      print(d["udid"]); sys.exit(0)
+print(fallback or ""); sys.exit(0 if fallback else 1)'
           )"
+
+          if [ -z "${DESTINATION_ID}" ]; then
+            echo "No available simulator devices found" >&2
+            exit 1
+          fi
 
           xcodebuild \
             -project buses.xcodeproj \
