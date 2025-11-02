@@ -12,16 +12,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode 16
+      - name: Select available Xcode version
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer \
-            || sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer \
-            || sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+          set -euo pipefail
+          for version in 16.2 16.1 16.0 15.4 15.3 15.2 15.1 15.0; do
+            developer_dir="/Applications/Xcode_${version}.app/Contents/Developer"
+            if [ -d "${developer_dir}" ]; then
+              echo "Selecting Xcode ${version}"
+              sudo xcode-select -s "${developer_dir}"
+              exit 0
+            fi
+          done
+          if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
+            echo "Selecting default Xcode installation"
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+            exit 0
+          fi
+          echo "No supported Xcode installations were found" >&2
+          exit 1
 
       - name: Ensure simulators are available
         run: |
           set -euo pipefail
-          if ! xcrun simctl list --json devices available | python3 - <<'PY'
+          if ! xcrun simctl list --json devices | python3 - <<'PY'
 import json, sys
 for runtime in json.load(sys.stdin).get("devices", {}).values():
     for device in runtime:
@@ -39,7 +52,7 @@ PY
           set -euo pipefail
           rm -rf TestResults.xcresult
           DESTINATION_ID="$(
-            xcrun simctl list --json devices available | python3 - <<'PY'
+            xcrun simctl list --json devices | python3 - <<'PY'
 import json, sys
 preferred = {"iPhone 15", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max"}
 fallback = None
