@@ -2,73 +2,76 @@ name: CI
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - main
+      - master
+      - "*"
   pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
     runs-on: macos-14
+    timeout-minutes: 60
+
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select available Xcode version
-        run: |
-          set -euo pipefail
-          for version in 16.2 16.1 16.0 15.4 15.3 15.2 15.1 15.0; do
-            developer_dir="/Applications/Xcode_${version}.app/Contents/Developer"
-            if [ -d "${developer_dir}" ]; then
-              echo "Selecting Xcode ${version}"
-              sudo xcode-select -s "${developer_dir}"
-              exit 0
-            fi
-          done
-          if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
-            echo "Selecting default Xcode installation"
-            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-            exit 0
-          fi
-          echo "No supported Xcode installations were found" >&2
-          exit 1
+      # Use the official Xcode setup action instead of hand-rolled xcode-select logic.
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: |
+            16.2
+            16.1
+            16.0
+            15.4
+            15.3
+            15.2
+            15.1
+            15.0
 
+      # Ensure at least one available simulator exists without downloading platforms.
       - name: Ensure simulators are available
         run: |
           set -euo pipefail
-          if ! xcrun simctl list --json devices | python3 - <<'PY'
-import json, sys
-for runtime in json.load(sys.stdin).get("devices", {}).values():
-    for device in runtime:
-        if device.get("isAvailable"):
-            sys.exit(0)
-sys.exit(1)
-PY
-          then
-            sudo xcodebuild -runFirstLaunch
-            sudo xcodebuild -downloadPlatform iOS
+          if ! xcrun simctl list devices available | grep -q "(Booted)"; then
+            # If nothing is booted/available, run first launch to register runtimes/devices.
+            sudo xcodebuild -runFirstLaunch || true
           fi
+          # Print what we have for debugging
+          xcrun simctl list devices
 
       - name: Run unit tests
         run: |
           set -euo pipefail
           rm -rf TestResults.xcresult
+
+          # Pick a good simulator UDID (prefer iPhone 15 family; else first available).
           DESTINATION_ID="$(
-            xcrun simctl list --json devices | python3 - <<'PY'
+            xcrun simctl list --json devices | /usr/bin/python3 - <<'PY'
 import json, sys
+data = json.load(sys.stdin).get("devices", {})
 preferred = {"iPhone 15", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max"}
 fallback = None
-for runtime_devices in json.load(sys.stdin).get("devices", {}).values():
-    for device in runtime_devices:
-        if not device.get("isAvailable"):
+for runtime, devices in data.items():
+    for d in devices:
+        if not d.get("isAvailable"):
             continue
+        name = d.get("name","")
         if fallback is None:
-            fallback = device.get("udid")
-        if device.get("name") in preferred:
-            print(device["udid"])
+            fallback = d.get("udid")
+        if name in preferred:
+            print(d["udid"])
             sys.exit(0)
 if fallback:
     print(fallback)
@@ -76,12 +79,15 @@ if fallback:
 sys.exit("No available simulator devices found")
 PY
           )"
+
           xcodebuild \
             -project buses.xcodeproj \
             -scheme buses \
             -destination "platform=iOS Simulator,id=${DESTINATION_ID}" \
             -resultBundlePath TestResults \
+            -quiet \
             test
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
