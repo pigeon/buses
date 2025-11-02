@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
   workflow_dispatch:
@@ -25,61 +23,96 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select available Xcode version
+      - name: Select available Xcode
         shell: bash
         run: |
           set -euo pipefail
-          for version in 16.2 16.1 16.0 15.4 15.3 15.2 15.1 15.0; do
-            dev="/Applications/Xcode_${version}.app/Contents/Developer"
+          for v in 16.2 16.1 16.0 15.4 15.3 15.2 15.1 15.0; do
+            dev="/Applications/Xcode_${v}.app/Contents/Developer"
             if [ -d "$dev" ]; then
-              echo "Selecting Xcode $version"
+              echo "Selecting Xcode $v"
               sudo xcode-select -s "$dev"
-              xcodebuild -version
-              exit 0
+              break
             fi
           done
-          if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
-            echo "Selecting default Xcode"
+          if ! xcodebuild -version >/dev/null 2>&1; then
             sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-            xcodebuild -version
-            exit 0
           fi
-          echo "No supported Xcode installations were found" >&2
-          exit 1
+          xcodebuild -version
 
-      - name: Ensure a simulator exists
+      - name: Register simulators (first launch)
         shell: bash
         run: |
           set -euo pipefail
-          # Try to boot a common device; ignore errors if it's already booted/not present.
-          xcrun simctl boot "iPhone 15 Pro" || true
-          xcrun simctl boot "iPhone 14" || true
-          echo "Available simulators:"
-          xcrun simctl list devices
+          sudo xcodebuild -runFirstLaunch || true
+          xcrun simctl list
+
+      - name: Ensure iOS simulator exists (create if needed)
+        id: sim
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Pick the newest AVAILABLE iOS runtime identifier (e.g. com.apple.CoreSimulator.SimRuntime.iOS-18-0)
+          RUNTIME_ID="$(xcrun simctl list -j runtimes | /usr/bin/python3 -c 'import json,sys
+data=json.load(sys.stdin)["runtimes"]
+ios=[r for r in data if r.get("platform","").lower()=="ios" and r.get("isAvailable")]
+ios.sort(key=lambda r:(r.get("version","0"), r.get("identifier","")), reverse=True)
+print(ios[0]["identifier"] if ios else "", end="")')"
+
+          if [ -z "$RUNTIME_ID" ]; then
+            echo "No available iOS runtimes found"; exit 1
+          fi
+          echo "RUNTIME_ID=$RUNTIME_ID"
+
+          # Try to find an available device for that runtime
+          EXISTING_UDID="$(xcrun simctl list -j devices "$RUNTIME_ID" | /usr/bin/python3 -c 'import json,sys
+import sys
+d=json.load(sys.stdin).get("devices",{}).get(sys.argv[1],[]) if len(sys.argv)>1 else []
+print(next((x["udid"] for x in d if x.get("isAvailable")), ""), end="")' "$RUNTIME_ID")"
+
+          if [ -n "$EXISTING_UDID" ]; then
+            UDID="$EXISTING_UDID"
+          else
+            # Choose a common device type that exists on most images; fall back to the first iPhone type
+            TYPE_ID="$(xcrun simctl list -j devicetypes | /usr/bin/python3 -c 'import json,sys,re
+types=json.load(sys.stdin)["devicetypes"]
+preferred=["iPhone 15 Pro","iPhone 15","iPhone 14","iPhone SE (3rd generation)"]
+byname={t["name"]:t["identifier"] for t in types}
+for name in preferred:
+    if name in byname: print(byname[name], end="") ; sys.exit(0)
+# fallback: first iPhone type
+for t in types:
+    if t["name"].startswith("iPhone"):
+        print(t["identifier"], end=""); sys.exit(0)
+print("", end="")')"
+            if [ -z "$TYPE_ID" ]; then
+              echo "No suitable device type found"; exit 1
+            fi
+            UDID="$(xcrun simctl create 'CI-iPhone' "$TYPE_ID" "$RUNTIME_ID")"
+          fi
+
+          # Boot it (ok if already booted)
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl list devices "$RUNTIME_ID"
+
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
       - name: Run unit tests
         shell: bash
         run: |
           set -euo pipefail
           rm -rf TestResults
-
-          # Prefer iPhone 15 Pro; fall back to the first available device.
-          DEST="platform=iOS Simulator,name=iPhone 15 Pro"
-          if ! xcrun simctl list devices | grep -q "iPhone 15 Pro (.*) (Booted)"; then
-            # Use the first available iOS Simulator device name
-            NAME="$(xcrun simctl list devices available | awk -F '[()]' '/iOS/{print $1; exit}' | sed 's/[[:space:]]*$//')"
-            if [ -z "$NAME" ]; then
-              echo "No available simulator devices found" >&2
-              exit 1
-            fi
-            DEST="platform=iOS Simulator,name=${NAME}"
+          DEST_ID="${{ steps.sim.outputs.udid }}"
+          if [ -z "$DEST_ID" ]; then
+            echo "No simulator UDID available"; exit 1
           fi
 
-          echo "Using destination: $DEST"
+          echo "Using destination id: $DEST_ID"
           xcodebuild \
             -project buses.xcodeproj \
-            -scheme buses \
-            -destination "$DEST" \
+            -scheme  buses \
+            -destination "platform=iOS Simulator,id=$DEST_ID" \
             -resultBundlePath TestResults \
             -quiet \
             test
