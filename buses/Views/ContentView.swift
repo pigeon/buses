@@ -7,7 +7,7 @@ struct ContentView: View {
     @State private var isShowingList = false
     @State private var selectedRoutes: Set<String> = []
     @State private var searchQuery: String = ""
-    @State private var focusedBusID: String?
+    @State private var focusedBusID: Bus.ID?
     @State private var isCameraFrozen = false
 
     var body: some View {
@@ -111,7 +111,7 @@ struct ContentView: View {
 
     private var mapContent: some View {
         Map(position: $viewModel.cameraPosition, selection: $focusedBusID) {
-            ForEach(filteredBuses) { bus in
+            ForEach(filteredBuses, id: \.id) { bus in
                 if let coordinate = bus.coordinate {
                     Annotation(bus.title, coordinate: coordinate) {
                         BusAnnotationView(bus: bus)
@@ -270,7 +270,7 @@ struct ContentView: View {
         return viewModel.buses.first(where: { $0.id == focusedBusID })
     }
 
-    private func timingDescription(for busID: String) -> String? {
+    private func timingDescription(for busID: Bus.ID) -> String? {
         if let status = viewModel.timingStatus(for: busID) {
             return status.description
         }
@@ -348,7 +348,7 @@ private struct BusListSheet: View {
     let allRoutes: [String]
     @Binding var selectedRoutes: Set<String>
     @Binding var searchQuery: String
-    let selectedBusID: String?
+    let selectedBusID: Bus.ID?
     let isShowingSelectedBus: Bool
     let onSelect: (Bus) -> Void
     let onReset: () -> Void
