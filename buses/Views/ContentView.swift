@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import _MapKit_SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = BusesViewModel()
