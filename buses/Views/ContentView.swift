@@ -112,27 +112,28 @@ struct ContentView: View {
     private var mapContent: some View {
         Map(
             position: $viewModel.cameraPosition,
-            selection: $focusedBusID,
-            annotationItems: filteredBuses
-        ) { bus in
-            if let coordinate = bus.coordinate {
-                Annotation(bus.title, coordinate: coordinate) {
-                    BusAnnotationView(bus: bus)
-                        .onTapGesture {
-                            focusedBusID = bus.id
-                            Task { await viewModel.fetchTimingStatus(for: bus) }
-                        }
-                }
-                .tag(bus.id)
-                .annotationTitles { _ in
-                    Text(bus.routeLabel ?? bus.title)
-                }
-                .annotationSubtitles { _ in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(bus.destinationLabel)
+            selection: $focusedBusID
+        ) {
+            ForEach(filteredBuses) { bus in
+                if let coordinate = bus.coordinate {
+                    Annotation(bus.title, coordinate: coordinate) {
+                        BusAnnotationView(bus: bus)
+                            .onTapGesture {
+                                focusedBusID = bus.id
+                                Task { await viewModel.fetchTimingStatus(for: bus) }
+                            }
+                    }
+                    .tag(bus.id)
+                    .annotationTitles { _ in
+                        Text(bus.routeLabel ?? bus.title)
+                    }
+                    .annotationSubtitles { _ in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(bus.destinationLabel)
 
-                        if let statusText = timingDescription(for: bus.id) {
-                            Text(statusText)
+                            if let statusText = timingDescription(for: bus.id) {
+                                Text(statusText)
+                            }
                         }
                     }
                 }
