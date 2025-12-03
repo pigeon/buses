@@ -114,7 +114,7 @@ struct ContentView: View {
             position: $viewModel.cameraPosition,
             selection: $focusedBusID
         ) {
-            ForEach(filteredBuses) { bus in
+            ForEach(filteredBuses, id: \.id) { bus in
                 if let coordinate = bus.coordinate {
                     Annotation(bus.title, coordinate: coordinate) {
                         BusAnnotationView(bus: bus)
