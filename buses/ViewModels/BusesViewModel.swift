@@ -9,6 +9,8 @@ final class BusesViewModel: ObservableObject {
     @Published var cameraPosition: MapCameraPosition = .automatic
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published private(set) var timingStatusByBusID: [String: TimingStatus] = [:]
+    private var timingRequestsInFlight: Set<String> = []
 
     func refresh(shouldUpdateCamera: Bool = true) async {
         guard !isLoading else { return }
@@ -35,6 +37,26 @@ final class BusesViewModel: ObservableObject {
 
     func fitToBuses(_ buses: [Bus]) {
         updateCameraToFit(buses: buses)
+    }
+
+    func timingStatus(for busID: String) -> TimingStatus? {
+        timingStatusByBusID[busID]
+    }
+
+    func fetchTimingStatus(for bus: Bus) async {
+        guard timingStatusByBusID[bus.id] == nil else { return }
+        guard !timingRequestsInFlight.contains(bus.id) else { return }
+        guard let journeyCode = bus.journeyCode else { return }
+
+        timingRequestsInFlight.insert(bus.id)
+        defer { timingRequestsInFlight.remove(bus.id) }
+
+        do {
+            let status = try await BusService.shared.fetchTimingStatus(journeyCode: journeyCode)
+            timingStatusByBusID[bus.id] = status
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func updateCameraToFit(buses: [Bus]) {

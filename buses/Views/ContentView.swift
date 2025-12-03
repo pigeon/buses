@@ -77,6 +77,7 @@ struct ContentView: View {
                     onSelect: { bus in
                         focusedBusID = bus.id
                         viewModel.focus(on: bus)
+                        Task { await viewModel.fetchTimingStatus(for: bus) }
                         isShowingList = false
                     },
                     onReset: resetFilters,
@@ -108,11 +109,28 @@ struct ContentView: View {
     }
 
     private var mapContent: some View {
-        Map(position: $viewModel.cameraPosition) {
+        Map(position: $viewModel.cameraPosition, selection: $focusedBusID) {
             ForEach(filteredBuses) { bus in
                 if let coordinate = bus.coordinate {
                     Annotation(bus.title, coordinate: coordinate) {
                         BusAnnotationView(bus: bus)
+                            .onTapGesture {
+                                focusedBusID = bus.id
+                                Task { await viewModel.fetchTimingStatus(for: bus) }
+                            }
+                    }
+                    .tag(bus.id)
+                    .annotationTitles { _ in
+                        Text(bus.routeLabel ?? bus.title)
+                    }
+                    .annotationSubtitles { _ in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(bus.destinationLabel)
+
+                            if let statusText = timingDescription(for: bus.id) {
+                                Text(statusText)
+                            }
+                        }
                     }
                 }
             }
@@ -249,6 +267,18 @@ struct ContentView: View {
     private var focusedBus: Bus? {
         guard let focusedBusID else { return nil }
         return viewModel.buses.first(where: { $0.id == focusedBusID })
+    }
+
+    private func timingDescription(for busID: String) -> String? {
+        if let status = viewModel.timingStatus(for: busID) {
+            return status.description
+        }
+
+        if focusedBusID == busID {
+            return "Timing: Loading…"
+        }
+
+        return nil
     }
 
     private func resetFilters() {
