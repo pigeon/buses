@@ -46,7 +46,7 @@ final class BusesViewModel: ObservableObject {
     func fetchTimingStatus(for bus: Bus) async {
         guard timingStatusByBusID[bus.id] == nil else { return }
         guard !timingRequestsInFlight.contains(bus.id) else { return }
-        guard let journeyCode = bus.journeyCode else { return }
+        guard let journeyCode = bus.vehicleRef else { return }
 
         timingRequestsInFlight.insert(bus.id)
         defer { timingRequestsInFlight.remove(bus.id) }

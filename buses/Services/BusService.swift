@@ -39,11 +39,34 @@ final class BusService {
             forHTTPHeaderField: "User-Agent"
         )
 
+        if let url = req.url,
+           var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+
+            components.queryItems = [
+                URLQueryItem(name: "includeLastCleanedLog", value: "true"),
+                URLQueryItem(name: "includeTimings", value: "true"),
+                URLQueryItem(name: "includeLiveOccupancy", value: "true")
+            ]
+
+            // Update the request with the new URL
+            req.url = components.url
+        }
+
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
+        // Print the raw response
+        print("Response: \(response)")
 
+        // Print HTTP status code
+        if let http = response as? HTTPURLResponse {
+            print("Status Code: \(http.statusCode)")
+            print("Headers: \(http.allHeaderFields)")
+        }
+
+        // Print the raw data (as bytes)
+        print("Response:\n \(String(describing: String(data:data, encoding: .utf8)))")
         let decoder = JSONDecoder()
         let vehicle = try decoder.decode(VehicleDetails.self, from: data)
         return vehicle.timingStatus

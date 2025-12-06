@@ -78,7 +78,7 @@ struct ContentView: View {
                     onSelect: { bus in
                         focusedBusID = bus.id
                         viewModel.focus(on: bus)
-                        Task { await viewModel.fetchTimingStatus(for: bus) }
+                        Task { await viewModel.fetchTimingStatus(for: bus.vehicleRef) }
                         isShowingList = false
                     },
                     onReset: resetFilters,
@@ -124,18 +124,6 @@ struct ContentView: View {
                             }
                     }
                     .tag(bus.id)
-                    .annotationTitles { _ in
-                        Text(bus.routeLabel ?? bus.title)
-                    }
-                    .annotationSubtitles { _ in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(bus.destinationLabel)
-
-                            if let statusText = timingDescription(for: bus.id) {
-                                Text(statusText)
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -158,6 +146,56 @@ struct ContentView: View {
             freezeCameraForUserInteraction()
         })
     }
+
+//    private var mapContent: some View {
+//        Map(
+//            position: $viewModel.cameraPosition,
+//            selection: $focusedBusID
+//        ) {
+//            ForEach(filteredBuses, id: \.id) { bus in
+//                if let coordinate = bus.coordinate {
+//                    Annotation(bus.title, coordinate: coordinate) {
+//                        BusAnnotationView(bus: bus)
+//                            .onTapGesture {
+//                                focusedBusID = bus.id
+//                                Task { await viewModel.fetchTimingStatus(for: bus) }
+//                            }
+//                    }
+//                    .tag(bus.id)
+//                    .annotationTitles { _ in
+//                        Text(bus.routeLabel ?? bus.title)
+//                    }
+//                    .annotationSubtitles { _ in
+//                        VStack(alignment: .leading, spacing: 2) {
+//                            Text(bus.destinationLabel)
+//
+//                            if let statusText = timingDescription(for: bus.id) {
+//                                Text(statusText)
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//        .mapControls {
+//            MapCompass()
+//            MapScaleView()
+//            MapPitchToggle()
+//            MapUserLocationButton()
+//        }
+//        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in
+//            freezeCameraForUserInteraction()
+//        })
+//        .simultaneousGesture(MagnificationGesture().onChanged { _ in
+//            freezeCameraForUserInteraction()
+//        })
+//        .simultaneousGesture(RotationGesture().onChanged { _ in
+//            freezeCameraForUserInteraction()
+//        })
+//        .simultaneousGesture(TapGesture(count: 2).onEnded {
+//            freezeCameraForUserInteraction()
+//        })
+//    }
 
     @ViewBuilder
     private var mapLayer: some View {
