@@ -78,7 +78,7 @@ struct ContentView: View {
                     onSelect: { bus in
                         focusedBusID = bus.id
                         viewModel.focus(on: bus)
-                        Task { await viewModel.fetchTimingStatus(for: bus.vehicleRef) }
+                        Task { await viewModel.fetchTimingStatus(for: bus) }
                         isShowingList = false
                     },
                     onReset: resetFilters,
