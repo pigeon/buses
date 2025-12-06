@@ -1,6 +1,11 @@
 import Foundation
 
-final class BusService {
+protocol BusServiceProtocol {
+    func fetchBuses() async throws -> [Bus]
+    func fetchTimingStatus(journeyCode: String) async throws -> TimingStatus?
+}
+
+final class BusService: BusServiceProtocol {
     static let shared = BusService()
     private init() {}
 
