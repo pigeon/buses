@@ -318,15 +318,8 @@ struct ContentView: View {
     }
 
     private func timingDescription(for busID: Bus.ID) -> String? {
-        if let status = viewModel.timingStatus(for: busID) {
-            return status.description
-        }
-
-        if focusedBusID == busID {
-            return "Timing: Loading…"
-        }
-
-        return nil
+        guard let status = viewModel.timingStatus(for: busID) else { return nil }
+        return status.lateDescription
     }
 
     private func resetFilters() {
