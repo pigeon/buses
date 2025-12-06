@@ -19,7 +19,7 @@ final class BusesViewModelTests: XCTestCase {
     func testFetchTimingStatusUsesMockService() async throws {
         let mock = MockBusService()
         let bus = try makeBus(overrides: ["JourneyCode": "JC123"])
-        let expectedStatus = TimingStatus(minutes: 5, status: "On time")
+        let expectedStatus = TimingStatus(minutes: 5, status: 0)
         mock.timingStatusResult = expectedStatus
         let viewModel = BusesViewModel(service: mock)
 
