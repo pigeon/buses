@@ -234,6 +234,12 @@ struct ContentView: View {
                         Text(bus.destinationLabel)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+
+                        if let statusText = timingDescription(for: bus.id) {
+                            Text(statusText)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .padding(14)
