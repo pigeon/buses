@@ -5,6 +5,7 @@ import MapKit
 
 @MainActor
 final class BusesViewModel: ObservableObject {
+    private let service: BusServiceProtocol
     @Published var buses: [Bus] = []
     @Published var cameraPosition: MapCameraPosition = .automatic
     @Published var isLoading = false
@@ -12,12 +13,16 @@ final class BusesViewModel: ObservableObject {
     @Published private(set) var timingStatusByBusID: [String: TimingStatus] = [:]
     private var timingRequestsInFlight: Set<String> = []
 
+    init(service: BusServiceProtocol = BusService.shared) {
+        self.service = service
+    }
+
     func refresh(shouldUpdateCamera: Bool = true) async {
         guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            let items = try await BusService.shared.fetchBuses()
+            let items = try await service.fetchBuses()
             buses = items
             if shouldUpdateCamera {
                 updateCameraToFit(buses: items)
@@ -56,7 +61,7 @@ final class BusesViewModel: ObservableObject {
         defer { timingRequestsInFlight.remove(bus.id) }
 
         do {
-            let status = try await BusService.shared.fetchTimingStatus(journeyCode: journeyCode)
+            let status = try await service.fetchTimingStatus(journeyCode: journeyCode)
             timingStatusByBusID[bus.id] = status ?? TimingStatus(minutes: nil, status: nil)
         } catch {
             timingStatusByBusID[bus.id] = TimingStatus(minutes: nil, status: nil)
