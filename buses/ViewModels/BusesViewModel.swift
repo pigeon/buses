@@ -57,8 +57,9 @@ final class BusesViewModel: ObservableObject {
 
         do {
             let status = try await BusService.shared.fetchTimingStatus(journeyCode: journeyCode)
-            timingStatusByBusID[bus.id] = status
+            timingStatusByBusID[bus.id] = status ?? TimingStatus(minutes: nil, status: nil)
         } catch {
+            timingStatusByBusID[bus.id] = TimingStatus(minutes: nil, status: nil)
             errorMessage = error.localizedDescription
         }
     }
