@@ -9,19 +9,9 @@ struct TimingStatus: Decodable, Equatable {
         case status = "Status"
     }
 
-    var description: String {
-        guard let status else { return "Timing: Unknown" }
-        switch status {
-        case 2:
-            let delay = minutes ?? 0
-            return "Timing: Late by \(delay) min\(delay == 1 ? "" : "s")"
-        case 1:
-            return "Timing: Early"
-        case 0:
-            return "Timing: On time"
-        default:
-            return "Timing: Status \(status)"
-        }
+    var lateDescription: String? {
+        guard status == 2, let minutes else { return nil }
+        return "Timing: Late by \(minutes) min\(minutes == 1 ? "" : "s")"
     }
 }
 
