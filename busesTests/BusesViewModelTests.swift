@@ -1,6 +1,7 @@
 import XCTest
 @testable import buses
 
+@MainActor
 final class BusesViewModelTests: XCTestCase {
     func testRefreshUsesMockService() async throws {
         let mock = MockBusService()
