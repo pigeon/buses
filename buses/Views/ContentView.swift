@@ -3,12 +3,12 @@ import MapKit
 import _MapKit_SwiftUI
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel = BusesViewModel()
     @State private var isShowingList = false
     @State private var selectedRoutes: Set<String> = []
     @State private var searchQuery: String = ""
-    @State private var focusedBusID: Bus.ID?
-    @State private var isCameraFrozen = false
+    @State private var refreshTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -39,17 +39,16 @@ struct ContentView: View {
             }
             .task {
                 await viewModel.refresh()
-
-                let thirtySeconds: UInt64 = 30_000_000_000
-
-                while !Task.isCancelled {
-                    do {
-                        try await Task.sleep(nanoseconds: thirtySeconds)
-                    } catch {
-                        break
-                    }
-
-                    await viewModel.refresh(shouldUpdateCamera: shouldAllowCameraAutoUpdate)
+                startRefreshLoop()
+            }
+            .onChange(of: scenePhase) { newPhase in
+                switch newPhase {
+                case .active:
+                    startRefreshLoop()
+                case .inactive, .background:
+                    stopRefreshLoop()
+                @unknown default:
+                    break
                 }
             }
             .alert(
@@ -73,10 +72,9 @@ struct ContentView: View {
                     allRoutes: sortedRoutes,
                     selectedRoutes: $selectedRoutes,
                     searchQuery: $searchQuery,
-                    selectedBusID: focusedBusID,
-                    isShowingSelectedBus: focusedBusID != nil,
+                    selectedBusID: viewModel.focusedBusID,
+                    isShowingSelectedBus: viewModel.focusedBusID != nil,
                     onSelect: { bus in
-                        focusedBusID = bus.id
                         viewModel.focus(on: bus)
                         Task { await viewModel.fetchTimingStatus(for: bus) }
                         isShowingList = false
@@ -90,18 +88,18 @@ struct ContentView: View {
             .onChange(of: viewModel.buses) { newValue in
                 let availableRoutes = Set(newValue.compactMap { $0.routeLabel })
                 selectedRoutes = selectedRoutes.intersection(availableRoutes)
-                ensureFocusedBusExists(in: newValue)
+                viewModel.clearFocusIfMissing(in: newValue)
                 updateCameraForFilters()
             }
             .onChange(of: selectedRoutes) { _ in
-                isCameraFrozen = false
+                viewModel.fitToBuses(filteredBuses)
                 updateCameraForFilters(force: true)
             }
             .onChange(of: searchQuery) { _ in
-                isCameraFrozen = false
+                viewModel.fitToBuses(filteredBuses)
                 updateCameraForFilters(force: true)
             }
-            .onChange(of: focusedBusID) { newValue in
+            .onChange(of: viewModel.focusedBusID) { newValue in
                 if newValue == nil {
                     updateCameraForFilters(force: true)
                 }
@@ -112,14 +110,14 @@ struct ContentView: View {
     private var mapContent: some View {
         Map(
             position: $viewModel.cameraPosition,
-            selection: $focusedBusID
+            selection: $viewModel.focusedBusID
         ) {
             ForEach(filteredBuses, id: \.id) { bus in
                 if let coordinate = bus.coordinate {
                     Annotation(bus.title, coordinate: coordinate) {
                         BusAnnotationView(bus: bus)
                             .onTapGesture {
-                                focusedBusID = bus.id
+                                viewModel.focus(on: bus)
                                 Task { await viewModel.fetchTimingStatus(for: bus) }
                             }
                     }
@@ -150,14 +148,14 @@ struct ContentView: View {
 //    private var mapContent: some View {
 //        Map(
 //            position: $viewModel.cameraPosition,
-//            selection: $focusedBusID
+//            selection: $viewModel.focusedBusID
 //        ) {
 //            ForEach(filteredBuses, id: \.id) { bus in
 //                if let coordinate = bus.coordinate {
 //                    Annotation(bus.title, coordinate: coordinate) {
 //                        BusAnnotationView(bus: bus)
 //                            .onTapGesture {
-//                                focusedBusID = bus.id
+//                                viewModel.focusedBusID = bus.id
 //                                Task { await viewModel.fetchTimingStatus(for: bus) }
 //                            }
 //                    }
@@ -259,7 +257,7 @@ struct ContentView: View {
                     .buttonStyle(.bordered)
                 }
 
-                if isCameraFrozen {
+                if viewModel.cameraMode == .manual {
                     Button { recenterCamera() } label: {
                         Label("Recenter map", systemImage: "location.circle")
                             .font(.subheadline)
@@ -275,7 +273,7 @@ struct ContentView: View {
     }
 
     private var filteredBuses: [Bus] {
-        if let focusedID = focusedBusID,
+        if let focusedID = viewModel.focusedBusID,
            let selectedBus = viewModel.buses.first(where: { $0.id == focusedID }) {
             return [selectedBus]
         }
@@ -301,19 +299,19 @@ struct ContentView: View {
     }
 
     private var hasActiveFilters: Bool {
-        !selectedRoutes.isEmpty || !searchQuery.isEmpty || focusedBusID != nil
+        !selectedRoutes.isEmpty || !searchQuery.isEmpty || viewModel.focusedBusID != nil
     }
 
     private var shouldAllowCameraAutoUpdate: Bool {
-        !hasActiveFilters && !isCameraFrozen
+        viewModel.cameraMode == .follow && !hasActiveFilters
     }
 
     private var clearFiltersLabel: String {
-        focusedBusID != nil ? "Show all" : "Clear"
+        viewModel.focusedBusID != nil ? "Show all" : "Clear"
     }
 
     private var focusedBus: Bus? {
-        guard let focusedBusID else { return nil }
+        guard let focusedBusID = viewModel.focusedBusID else { return nil }
         return viewModel.buses.first(where: { $0.id == focusedBusID })
     }
 
@@ -325,7 +323,7 @@ struct ContentView: View {
     private func resetFilters() {
         selectedRoutes.removeAll()
         searchQuery = ""
-        focusedBusID = nil
+        viewModel.focusedBusID = nil
         recenterCamera()
     }
 
@@ -346,40 +344,50 @@ struct ContentView: View {
         return haystack.contains(lowerQuery)
     }
 
-    private func ensureFocusedBusExists(in buses: [Bus]) {
-        guard let currentFocusedID = focusedBusID else { return }
-        if !buses.contains(where: { $0.id == currentFocusedID }) {
-            focusedBusID = nil
-        }
-    }
-
     private var hasQueryOrRouteFilters: Bool {
         !selectedRoutes.isEmpty || !searchQuery.isEmpty
     }
 
     private func freezeCameraForUserInteraction() {
-        guard !isCameraFrozen else { return }
-        isCameraFrozen = true
+        viewModel.enterManualCameraMode()
     }
 
     private func recenterCamera() {
-        isCameraFrozen = false
-
-        if let bus = focusedBus {
-            viewModel.focus(on: bus)
-        } else if hasQueryOrRouteFilters {
-            viewModel.fitToBuses(filteredBuses)
-        } else {
-            viewModel.fitToBuses(viewModel.buses)
-        }
+        viewModel.resetCamera(using: hasQueryOrRouteFilters ? filteredBuses : viewModel.buses)
     }
 
     private func updateCameraForFilters(force: Bool = false) {
-        guard focusedBusID == nil else { return }
+        guard viewModel.focusedBusID == nil else { return }
         guard hasQueryOrRouteFilters else { return }
-        guard force || !isCameraFrozen else { return }
+        guard force || viewModel.cameraMode == .follow else { return }
 
         viewModel.fitToBuses(filteredBuses)
+    }
+
+    private func startRefreshLoop() {
+        refreshTask?.cancel()
+
+        guard scenePhase == .active else { return }
+
+        refreshTask = Task {
+            let thirtySeconds: UInt64 = 30_000_000_000
+
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: thirtySeconds)
+                } catch {
+                    break
+                }
+
+                let allowAutoUpdate = await MainActor.run { shouldAllowCameraAutoUpdate }
+                await viewModel.refresh(shouldUpdateCamera: allowAutoUpdate)
+            }
+        }
+    }
+
+    private func stopRefreshLoop() {
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 }
 

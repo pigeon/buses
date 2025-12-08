@@ -1,17 +1,29 @@
 import Foundation
 import _MapKit_SwiftUI
-import Combine
 import MapKit
 
 @MainActor
 final class BusesViewModel: ObservableObject {
+    enum CameraMode {
+        case follow
+        case manual
+    }
+
+    private struct CachedTimingStatus {
+        let status: TimingStatus?
+        let fetchedAt: Date
+    }
+
     private let service: BusServiceProtocol
     @Published var buses: [Bus] = []
     @Published var cameraPosition: MapCameraPosition = .automatic
+    @Published var focusedBusID: Bus.ID?
     @Published var isLoading = false
     @Published var errorMessage: String?
-    @Published private(set) var timingStatusByBusID: [String: TimingStatus] = [:]
+    @Published private(set) var cameraMode: CameraMode = .follow
+    @Published private(set) var timingStatusByBusID: [String: CachedTimingStatus] = [:]
     private var timingRequestsInFlight: Set<String> = []
+    private let timingStatusTTL: TimeInterval = 300
 
     init(service: BusServiceProtocol = BusService.shared) {
         self.service = service
@@ -24,7 +36,9 @@ final class BusesViewModel: ObservableObject {
         do {
             let items = try await service.fetchBuses()
             buses = items
-            if shouldUpdateCamera {
+            pruneCachedTimingStatuses(with: items)
+
+            if shouldUpdateCamera && cameraMode == .follow {
                 updateCameraToFit(buses: items)
             }
             errorMessage = nil
@@ -34,6 +48,8 @@ final class BusesViewModel: ObservableObject {
     }
 
     func focus(on bus: Bus) {
+        focusedBusID = bus.id
+        cameraMode = .follow
         guard let coord = bus.coordinate else { return }
         let span = MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
         let region = MKCoordinateRegion(center: coord, span: span)
@@ -41,19 +57,28 @@ final class BusesViewModel: ObservableObject {
     }
 
     func fitToBuses(_ buses: [Bus]) {
+        cameraMode = .follow
         updateCameraToFit(buses: buses)
     }
 
     func timingStatus(for busID: String) -> TimingStatus? {
-        timingStatusByBusID[busID]
+        guard let cached = timingStatusByBusID[busID] else { return nil }
+        guard !isTimingStatusStale(cached) else {
+            timingStatusByBusID.removeValue(forKey: busID)
+            return nil
+        }
+        return cached.status
     }
 
     func fetchTimingStatus(for bus: Bus) async {
-        guard timingStatusByBusID[bus.id] == nil else { return }
+        if let cached = timingStatusByBusID[bus.id], !isTimingStatusStale(cached) {
+            return
+        }
+
         guard !timingRequestsInFlight.contains(bus.id) else { return }
 
         guard let journeyCode = bus.journeyCode ?? bus.vehicleRef else {
-            timingStatusByBusID[bus.id] = TimingStatus(minutes: nil, status: nil)
+            timingStatusByBusID[bus.id] = CachedTimingStatus(status: TimingStatus(minutes: nil, status: nil), fetchedAt: Date())
             return
         }
 
@@ -62,10 +87,32 @@ final class BusesViewModel: ObservableObject {
 
         do {
             let status = try await service.fetchTimingStatus(journeyCode: journeyCode)
-            timingStatusByBusID[bus.id] = status ?? TimingStatus(minutes: nil, status: nil)
+            timingStatusByBusID[bus.id] = CachedTimingStatus(status: status ?? TimingStatus(minutes: nil, status: nil), fetchedAt: Date())
         } catch {
-            timingStatusByBusID[bus.id] = TimingStatus(minutes: nil, status: nil)
+            timingStatusByBusID[bus.id] = CachedTimingStatus(status: TimingStatus(minutes: nil, status: nil), fetchedAt: Date())
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func enterManualCameraMode() {
+        cameraMode = .manual
+    }
+
+    func resetCamera(using buses: [Bus]) {
+        cameraMode = .follow
+
+        if let focusedBusID,
+           let bus = buses.first(where: { $0.id == focusedBusID }) {
+            focus(on: bus)
+        } else {
+            fitToBuses(buses)
+        }
+    }
+
+    func clearFocusIfMissing(in buses: [Bus]) {
+        guard let focusedBusID else { return }
+        guard buses.contains(where: { $0.id == focusedBusID }) else {
+            focusedBusID = nil
         }
     }
 
@@ -124,5 +171,14 @@ final class BusesViewModel: ObservableObject {
             .intersection(.world)
 
         return paddedRect
+    }
+
+    private func isTimingStatusStale(_ cached: CachedTimingStatus) -> Bool {
+        Date().timeIntervalSince(cached.fetchedAt) > timingStatusTTL
+    }
+
+    private func pruneCachedTimingStatuses(with buses: [Bus]) {
+        let validIDs = Set(buses.map { $0.id })
+        timingStatusByBusID = timingStatusByBusID.filter { validIDs.contains($0.key) && !isTimingStatusStale($0.value) }
     }
 }

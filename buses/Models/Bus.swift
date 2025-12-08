@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import MapKit
 
@@ -250,11 +251,8 @@ struct Bus: Decodable, Identifiable, Equatable {
             components.append(String(Int(validUntil.timeIntervalSince1970)))
         }
 
-        if !components.isEmpty {
-            return components.joined(separator: "_")
-        }
-
-        return UUID().uuidString
+        let rawValue = components.joined(separator: "_")
+        return Self.deterministicHash(for: rawValue.isEmpty ? "unknown" : rawValue)
     }
 
     private static func decodeISO8601OrNil(from c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) throws -> Date? {
@@ -280,6 +278,11 @@ struct Bus: Decodable, Identifiable, Equatable {
             return Date(timeIntervalSince1970: ms / 1000.0)
         }
         return nil
+    }
+
+    private static func deterministicHash(for value: String) -> String {
+        let digest = SHA256.hash(data: Data(value.utf8))
+        return digest.compactMap { String(format: "%02x", $0) }.joined().prefix(16).description
     }
 }
 
