@@ -62,4 +62,28 @@ final class BusTests: XCTestCase {
         XCTAssertEqual(bus.coordinate!.latitude, 52.1234, accuracy: 0.0001)
         XCTAssertEqual(bus.coordinate!.longitude, -0.1234, accuracy: 0.0001)
     }
+
+    func testStableIdentifierIsDeterministicWithoutSourceIDs() throws {
+        let overrides: [String: Any] = [
+            "VehicleRef": NSNull(),
+            "LineRef": NSNull(),
+            "PublishedLineName": NSNull(),
+            "JourneyCode": NSNull(),
+            "TicketMachineServiceCode": NSNull(),
+            "BlockRef": NSNull(),
+            "StopPointRef": NSNull(),
+            "Latitude": "52.0000",
+            "Longitude": "0.1000",
+            "RecordedAtTime": "2024-01-01T00:00:00Z",
+            "ValidUntilTime": "2024-01-01T00:05:00Z"
+        ]
+
+        let bus1 = try makeBus(overrides: overrides)
+        let bus2 = try makeBus(overrides: overrides)
+
+        XCTAssertEqual(bus1.id, bus2.id)
+
+        let changedLocation = try makeBus(overrides: overrides.merging(["Latitude": "52.0001"]) { $1 })
+        XCTAssertNotEqual(bus1.id, changedLocation.id)
+    }
 }
