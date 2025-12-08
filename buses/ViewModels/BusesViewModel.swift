@@ -15,6 +15,8 @@ final class BusesViewModel: ObservableObject {
     }
 
     private let service: BusServiceProtocol
+    private let timingStatusTTL: TimeInterval
+    private let dateProvider: () -> Date
     @Published var buses: [Bus] = []
     @Published var cameraPosition: MapCameraPosition = .automatic
     @Published var focusedBusID: Bus.ID?
@@ -23,10 +25,15 @@ final class BusesViewModel: ObservableObject {
     @Published private(set) var cameraMode: CameraMode = .follow
     @Published private(set) var timingStatusByBusID: [String: CachedTimingStatus] = [:]
     private var timingRequestsInFlight: Set<String> = []
-    private let timingStatusTTL: TimeInterval = 300
 
-    init(service: BusServiceProtocol = BusService.shared) {
+    init(
+        service: BusServiceProtocol = BusService.shared,
+        timingStatusTTL: TimeInterval = 300,
+        dateProvider: @escaping () -> Date = Date.init
+    ) {
         self.service = service
+        self.timingStatusTTL = timingStatusTTL
+        self.dateProvider = dateProvider
     }
 
     func refresh(shouldUpdateCamera: Bool = true) async {
@@ -78,7 +85,7 @@ final class BusesViewModel: ObservableObject {
         guard !timingRequestsInFlight.contains(bus.id) else { return }
 
         guard let journeyCode = bus.journeyCode ?? bus.vehicleRef else {
-            timingStatusByBusID[bus.id] = CachedTimingStatus(status: TimingStatus(minutes: nil, status: nil), fetchedAt: Date())
+            timingStatusByBusID[bus.id] = CachedTimingStatus(status: TimingStatus(minutes: nil, status: nil), fetchedAt: dateProvider())
             return
         }
 
@@ -87,9 +94,9 @@ final class BusesViewModel: ObservableObject {
 
         do {
             let status = try await service.fetchTimingStatus(journeyCode: journeyCode)
-            timingStatusByBusID[bus.id] = CachedTimingStatus(status: status ?? TimingStatus(minutes: nil, status: nil), fetchedAt: Date())
+            timingStatusByBusID[bus.id] = CachedTimingStatus(status: status ?? TimingStatus(minutes: nil, status: nil), fetchedAt: dateProvider())
         } catch {
-            timingStatusByBusID[bus.id] = CachedTimingStatus(status: TimingStatus(minutes: nil, status: nil), fetchedAt: Date())
+            timingStatusByBusID[bus.id] = CachedTimingStatus(status: TimingStatus(minutes: nil, status: nil), fetchedAt: dateProvider())
             errorMessage = error.localizedDescription
         }
     }
@@ -174,7 +181,7 @@ final class BusesViewModel: ObservableObject {
     }
 
     private func isTimingStatusStale(_ cached: CachedTimingStatus) -> Bool {
-        Date().timeIntervalSince(cached.fetchedAt) > timingStatusTTL
+        dateProvider().timeIntervalSince(cached.fetchedAt) > timingStatusTTL
     }
 
     private func pruneCachedTimingStatuses(with buses: [Bus]) {
