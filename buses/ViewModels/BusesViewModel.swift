@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import _MapKit_SwiftUI
 import MapKit
 
@@ -23,7 +24,7 @@ final class BusesViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published private(set) var cameraMode: CameraMode = .follow
-    @Published private(set) var timingStatusByBusID: [String: CachedTimingStatus] = [:]
+    @Published private var timingStatusByBusID: [String: CachedTimingStatus] = [:]
     private var timingRequestsInFlight: Set<String> = []
 
     init(
