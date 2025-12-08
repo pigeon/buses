@@ -80,11 +80,49 @@ final class BusesViewModelTests: XCTestCase {
         XCTAssertEqual(mock.fetchTimingStatusCallCount, 2)
         XCTAssertEqual(viewModel.timingStatus(for: bus.id)?.minutes, 1)
     }
+
+    func testFetchTimingStatusDeduplicatesInFlightRequests() async throws {
+        let mock = MockBusService()
+        mock.timingStatusDelayNanoseconds = 100_000_000
+        mock.timingStatusResult = TimingStatus(minutes: 3, status: 0)
+        let bus = try makeBus(overrides: ["JourneyCode": "JC123"])
+        let viewModel = BusesViewModel(service: mock)
+
+        let task1 = Task { await viewModel.fetchTimingStatus(for: bus) }
+        let task2 = Task { await viewModel.fetchTimingStatus(for: bus) }
+        _ = await (task1.value, task2.value)
+
+        XCTAssertEqual(mock.fetchTimingStatusCallCount, 1)
+    }
+
+    func testRefreshPrunesCachedTimingStatusesForMissingBuses() async throws {
+        let mock = MockBusService()
+        let bus1 = try makeBus(overrides: ["JourneyCode": "JC123"])
+        let bus2 = try makeBus(overrides: ["JourneyCode": "JC456", "VehicleRef": "Vehicle-99"])
+
+        mock.busesResult = [bus1]
+        var now = Date()
+        let viewModel = BusesViewModel(service: mock, timingStatusTTL: 300, dateProvider: { now })
+
+        await viewModel.refresh(shouldUpdateCamera: false)
+        await viewModel.fetchTimingStatus(for: bus1)
+
+        XCTAssertNotNil(viewModel.timingStatus(for: bus1.id))
+
+        mock.busesResult = [bus2]
+        now = now.addingTimeInterval(60)
+
+        await viewModel.refresh(shouldUpdateCamera: false)
+
+        XCTAssertNil(viewModel.timingStatus(for: bus1.id))
+        XCTAssertEqual(viewModel.buses, [bus2])
+    }
 }
 
 private final class MockBusService: BusServiceProtocol {
     var busesResult: [Bus] = []
     var timingStatusResult: TimingStatus?
+    var timingStatusDelayNanoseconds: UInt64 = 0
     private(set) var fetchBusesCallCount = 0
     private(set) var fetchTimingStatusCallCount = 0
 
@@ -95,6 +133,9 @@ private final class MockBusService: BusServiceProtocol {
 
     func fetchTimingStatus(journeyCode: String) async throws -> TimingStatus? {
         fetchTimingStatusCallCount += 1
+        if timingStatusDelayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: timingStatusDelayNanoseconds)
+        }
         return timingStatusResult
     }
 }
