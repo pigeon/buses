@@ -9,7 +9,20 @@ final class BusService: BusServiceProtocol {
     static let shared = BusService()
     private init() {}
 
-    private let baseURL = URL(string: "https://portal.go-coach.co.uk/v5/widget/api/buses?region=&showBusesNotInService=false")!
+    private let baseURL: URL = {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "portal.go-coach.co.uk"
+        components.path = "/v5/widget/api/buses"
+        components.queryItems = [
+            URLQueryItem(name: "region", value: ""),
+            URLQueryItem(name: "showBusesNotInService", value: "false")
+        ]
+        guard let url = components.url else {
+            preconditionFailure("Invalid base URL components for bus service.")
+        }
+        return url
+    }()
     private let vehicleBaseURL = URL(string: "https://portal.go-coach.co.uk/api/vehicle/")!
 
     func fetchBuses() async throws -> [Bus] {
