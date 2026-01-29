@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var searchQuery: String = ""
     @State private var focusedBusID: Bus.ID?
     @State private var isCameraFrozen = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -37,7 +38,8 @@ struct ContentView: View {
                     .accessibilityLabel("Open bus list")
                 }
             }
-            .task {
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
                 await viewModel.refresh()
 
                 let thirtySeconds: UInt64 = 30_000_000_000
