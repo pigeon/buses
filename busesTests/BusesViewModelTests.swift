@@ -28,11 +28,43 @@ final class BusesViewModelTests: XCTestCase {
         XCTAssertEqual(mock.fetchTimingStatusCallCount, 1)
         XCTAssertEqual(viewModel.timingStatus(for: bus.id), expectedStatus)
     }
+
+    func testFetchTimingStatusUsesCacheWithinLifetime() async throws {
+        let mock = MockBusService()
+        let bus = try makeBus(overrides: ["JourneyCode": "JC123"])
+        let expectedStatus = TimingStatus(minutes: 4, status: 2)
+        mock.timingStatusResult = expectedStatus
+        let viewModel = BusesViewModel(service: mock, timingStatusCacheLifetime: 30)
+        let now = Date()
+
+        await viewModel.fetchTimingStatus(for: bus, now: now)
+        await viewModel.fetchTimingStatus(for: bus, now: now.addingTimeInterval(10))
+
+        XCTAssertEqual(mock.fetchTimingStatusCallCount, 1)
+        XCTAssertEqual(viewModel.timingStatus(for: bus.id), expectedStatus)
+    }
+
+    func testFetchTimingStatusRefreshesAfterCacheExpires() async throws {
+        let mock = MockBusService()
+        let bus = try makeBus(overrides: ["JourneyCode": "JC123"])
+        let firstStatus = TimingStatus(minutes: 1, status: 0)
+        let secondStatus = TimingStatus(minutes: 7, status: 2)
+        mock.timingStatusResults = [firstStatus, secondStatus]
+        let viewModel = BusesViewModel(service: mock, timingStatusCacheLifetime: 30)
+        let now = Date()
+
+        await viewModel.fetchTimingStatus(for: bus, now: now)
+        await viewModel.fetchTimingStatus(for: bus, now: now.addingTimeInterval(31))
+
+        XCTAssertEqual(mock.fetchTimingStatusCallCount, 2)
+        XCTAssertEqual(viewModel.timingStatus(for: bus.id), secondStatus)
+    }
 }
 
 private final class MockBusService: BusServiceProtocol {
     var busesResult: [Bus] = []
     var timingStatusResult: TimingStatus?
+    var timingStatusResults: [TimingStatus?] = []
     private(set) var fetchBusesCallCount = 0
     private(set) var fetchTimingStatusCallCount = 0
 
@@ -43,6 +75,9 @@ private final class MockBusService: BusServiceProtocol {
 
     func fetchTimingStatus(journeyCode: String) async throws -> TimingStatus? {
         fetchTimingStatusCallCount += 1
+        if !timingStatusResults.isEmpty {
+            return timingStatusResults.removeFirst()
+        }
         return timingStatusResult
     }
 }

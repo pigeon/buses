@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 protocol BusServiceProtocol {
     func fetchBuses() async throws -> [Bus]
@@ -9,6 +10,7 @@ final class BusService: BusServiceProtocol {
     static let shared = BusService()
     private init() {}
 
+    private let logger = Logger(subsystem: "com.gocoach.buses", category: "network")
     private let baseURL = URL(string: "https://portal.go-coach.co.uk/v5/widget/api/buses?region=&showBusesNotInService=false")!
     private let vehicleBaseURL = URL(string: "https://portal.go-coach.co.uk/api/vehicle/")!
 
@@ -25,8 +27,8 @@ final class BusService: BusServiceProtocol {
             forHTTPHeaderField: "Referer"
         )
 
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        let (data, http) = try await performRequest(req, requestLabel: "fetchBuses")
+        guard (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
 
@@ -57,23 +59,84 @@ final class BusService: BusServiceProtocol {
             req.url = components.url
         }
 
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        let (data, http) = try await performRequest(req, requestLabel: "fetchTimingStatus")
+        guard (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
-        // Print the raw response
-        print("Response: \(response)")
-
-        // Print HTTP status code
-        if let http = response as? HTTPURLResponse {
-            print("Status Code: \(http.statusCode)")
-            print("Headers: \(http.allHeaderFields)")
-        }
-
-        // Print the raw data (as bytes)
-        print("Response:\n \(String(describing: String(data:data, encoding: .utf8)))")
         let decoder = JSONDecoder()
         let vehicle = try decoder.decode(VehicleDetails.self, from: data)
         return vehicle.timingStatus
+    }
+
+    private func performRequest(
+        _ request: URLRequest,
+        requestLabel: String
+    ) async throws -> (Data, HTTPURLResponse) {
+        let method = request.httpMethod ?? "GET"
+        let urlString = request.url?.absoluteString ?? "<missing URL>"
+        let requestHeaders = formatHeaders(request.allHTTPHeaderFields ?? [:])
+        let requestBody = prettyPrintedPayload(from: request.httpBody) ?? "<empty>"
+
+        logger.debug("[\(requestLabel, privacy: .public)] -> \(method, privacy: .public) \(urlString, privacy: .public)")
+        logger.debug("[\(requestLabel, privacy: .public)] request headers: \(requestHeaders, privacy: .public)")
+        logger.debug("[\(requestLabel, privacy: .public)] request body: \(requestBody, privacy: .public)")
+
+        let started = Date()
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let elapsedMs = Int(Date().timeIntervalSince(started) * 1000)
+
+            guard let http = response as? HTTPURLResponse else {
+                logger.error("[\(requestLabel, privacy: .public)] <- non-HTTP response after \(elapsedMs, privacy: .public) ms")
+                throw URLError(.badServerResponse)
+            }
+
+            let responseHeaders = formatHeaders(http.allHeaderFields)
+            let responseBody = prettyPrintedPayload(from: data) ?? "<non-UTF8 \(data.count) bytes>"
+            logger.debug(
+                "[\(requestLabel, privacy: .public)] <- status \(http.statusCode, privacy: .public) in \(elapsedMs, privacy: .public) ms"
+            )
+            logger.debug("[\(requestLabel, privacy: .public)] response headers: \(responseHeaders, privacy: .public)")
+            logger.debug("[\(requestLabel, privacy: .public)] response body: \(responseBody, privacy: .public)")
+
+            return (data, http)
+        } catch {
+            let elapsedMs = Int(Date().timeIntervalSince(started) * 1000)
+            logger.error(
+                "[\(requestLabel, privacy: .public)] request failed after \(elapsedMs, privacy: .public) ms: \(error.localizedDescription, privacy: .public)"
+            )
+            throw error
+        }
+    }
+
+    private func prettyPrintedPayload(from data: Data?) -> String? {
+        guard let data else { return nil }
+        guard !data.isEmpty else { return "" }
+
+        if let object = try? JSONSerialization.jsonObject(with: data, options: []),
+           let formattedData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted]),
+           let json = String(data: formattedData, encoding: .utf8) {
+            return json
+        }
+
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func formatHeaders(_ headers: [String: String]) -> String {
+        guard !headers.isEmpty else { return "<none>" }
+        return headers
+            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            .map { "\($0.key): \($0.value)" }
+            .joined(separator: "\n")
+    }
+
+    private func formatHeaders(_ headers: [AnyHashable: Any]) -> String {
+        guard !headers.isEmpty else { return "<none>" }
+
+        return headers
+            .map { (key: String(describing: $0.key), value: String(describing: $0.value)) }
+            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            .map { "\($0.key): \($0.value)" }
+            .joined(separator: "\n")
     }
 }
