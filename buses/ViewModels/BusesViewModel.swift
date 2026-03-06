@@ -6,15 +6,21 @@ import MapKit
 @MainActor
 final class BusesViewModel: ObservableObject {
     private let service: BusServiceProtocol
+    private let timingStatusCacheLifetime: TimeInterval
     @Published var buses: [Bus] = []
     @Published var cameraPosition: MapCameraPosition = .automatic
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published private(set) var timingStatusByBusID: [String: TimingStatus] = [:]
+    private var timingStatusFetchedAtByBusID: [String: Date] = [:]
     private var timingRequestsInFlight: Set<String> = []
 
-    init(service: BusServiceProtocol = BusService.shared) {
+    init(
+        service: BusServiceProtocol = BusService.shared,
+        timingStatusCacheLifetime: TimeInterval = 30
+    ) {
         self.service = service
+        self.timingStatusCacheLifetime = timingStatusCacheLifetime
     }
 
     func refresh(shouldUpdateCamera: Bool = true) async {
@@ -24,6 +30,7 @@ final class BusesViewModel: ObservableObject {
         do {
             let items = try await service.fetchBuses()
             buses = items
+            pruneTimingCaches(using: items)
             if shouldUpdateCamera {
                 updateCameraToFit(buses: items)
             }
@@ -48,12 +55,16 @@ final class BusesViewModel: ObservableObject {
         timingStatusByBusID[busID]
     }
 
-    func fetchTimingStatus(for bus: Bus) async {
-        guard timingStatusByBusID[bus.id] == nil else { return }
+    func fetchTimingStatus(for bus: Bus, now: Date = Date()) async {
         guard !timingRequestsInFlight.contains(bus.id) else { return }
+        if let fetchedAt = timingStatusFetchedAtByBusID[bus.id],
+           now.timeIntervalSince(fetchedAt) < timingStatusCacheLifetime {
+            return
+        }
 
         guard let journeyCode = bus.journeyCode ?? bus.vehicleRef else {
             timingStatusByBusID[bus.id] = TimingStatus(minutes: nil, status: nil)
+            timingStatusFetchedAtByBusID[bus.id] = now
             return
         }
 
@@ -63,10 +74,19 @@ final class BusesViewModel: ObservableObject {
         do {
             let status = try await service.fetchTimingStatus(journeyCode: journeyCode)
             timingStatusByBusID[bus.id] = status ?? TimingStatus(minutes: nil, status: nil)
+            timingStatusFetchedAtByBusID[bus.id] = now
         } catch {
             timingStatusByBusID[bus.id] = TimingStatus(minutes: nil, status: nil)
+            timingStatusFetchedAtByBusID[bus.id] = now
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func pruneTimingCaches(using buses: [Bus]) {
+        let validIDs = Set(buses.map(\.id))
+        timingStatusByBusID = timingStatusByBusID.filter { validIDs.contains($0.key) }
+        timingStatusFetchedAtByBusID = timingStatusFetchedAtByBusID.filter { validIDs.contains($0.key) }
+        timingRequestsInFlight = timingRequestsInFlight.filter { validIDs.contains($0) }
     }
 
     private func updateCameraToFit(buses: [Bus]) {

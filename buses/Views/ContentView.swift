@@ -42,11 +42,11 @@ struct ContentView: View {
                 guard scenePhase == .active else { return }
                 await viewModel.refresh()
 
-                let thirtySeconds: UInt64 = 30_000_000_000
+                let refreshInterval: UInt64 = 120_000_000_000
 
                 while !Task.isCancelled {
                     do {
-                        try await Task.sleep(nanoseconds: thirtySeconds)
+                        try await Task.sleep(nanoseconds: refreshInterval)
                     } catch {
                         break
                     }
@@ -93,6 +93,10 @@ struct ContentView: View {
                 let availableRoutes = Set(newValue.compactMap { $0.routeLabel })
                 selectedRoutes = selectedRoutes.intersection(availableRoutes)
                 ensureFocusedBusExists(in: newValue)
+                if let focusedBusID,
+                   let focusedBus = newValue.first(where: { $0.id == focusedBusID }) {
+                    Task { await viewModel.fetchTimingStatus(for: focusedBus) }
+                }
                 updateCameraForFilters()
             }
             .onChange(of: selectedRoutes) { _ in
