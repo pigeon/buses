@@ -64,7 +64,7 @@ final class BusesViewModel: ObservableObject {
 
         guard let journeyCode = bus.journeyCode ?? bus.vehicleRef else {
             timingStatusByBusID[bus.id] = TimingStatus(minutes: nil, status: nil)
-            timingStatusFetchedAtByBusID[bus.id] = now
+            timingStatusFetchedAtByBusID[bus.id] = Date()
             return
         }
 
@@ -74,10 +74,10 @@ final class BusesViewModel: ObservableObject {
         do {
             let status = try await service.fetchTimingStatus(journeyCode: journeyCode)
             timingStatusByBusID[bus.id] = status ?? TimingStatus(minutes: nil, status: nil)
-            timingStatusFetchedAtByBusID[bus.id] = now
+            timingStatusFetchedAtByBusID[bus.id] = Date()
         } catch {
             timingStatusByBusID[bus.id] = TimingStatus(minutes: nil, status: nil)
-            timingStatusFetchedAtByBusID[bus.id] = now
+            timingStatusFetchedAtByBusID[bus.id] = Date()
             errorMessage = error.localizedDescription
         }
     }

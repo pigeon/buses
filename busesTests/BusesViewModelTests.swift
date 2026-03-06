@@ -35,7 +35,7 @@ final class BusesViewModelTests: XCTestCase {
         let expectedStatus = TimingStatus(minutes: 4, status: 2)
         mock.timingStatusResult = expectedStatus
         let viewModel = BusesViewModel(service: mock, timingStatusCacheLifetime: 30)
-        let now = Date(timeIntervalSince1970: 1_000)
+        let now = Date()
 
         await viewModel.fetchTimingStatus(for: bus, now: now)
         await viewModel.fetchTimingStatus(for: bus, now: now.addingTimeInterval(10))
@@ -51,7 +51,7 @@ final class BusesViewModelTests: XCTestCase {
         let secondStatus = TimingStatus(minutes: 7, status: 2)
         mock.timingStatusResults = [firstStatus, secondStatus]
         let viewModel = BusesViewModel(service: mock, timingStatusCacheLifetime: 30)
-        let now = Date(timeIntervalSince1970: 2_000)
+        let now = Date()
 
         await viewModel.fetchTimingStatus(for: bus, now: now)
         await viewModel.fetchTimingStatus(for: bus, now: now.addingTimeInterval(31))
